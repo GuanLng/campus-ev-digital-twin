@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>校园电动车数字孪生监管系统</title>
+    <!-- MediaPipe Hands CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body { font-family: 'Microsoft YaHei', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+        .header {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            padding: 20px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid #3b82f6;
+            box-shadow: 0 4px 20px rgba(59,130,246,0.2);
+        }
+        .header h1 { font-size: 24px; font-weight: 700; }
+        .header h1 span { color: #3b82f6; }
+        .header .subtitle { font-size: 14px; color: #94a3b8; }
+
+        .toolbar {
+            display: flex; gap: 12px; padding: 12px 40px;
+            background: #1e293b; align-items: center; flex-wrap: wrap;
+            border-bottom: 1px solid #334155;
+        }
+        .btn {
+            padding: 8px 20px; border: none; border-radius: 8px;
+            font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+        .btn-primary:disabled { background: #475569; cursor: not-allowed; transform: none; }
+        .btn-success { background: #22c55e; color: black; }
+        .btn-warning { background: #f59e0b; color: black; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-purple { background: #8b5cf6; color: white; }
+        .btn-purple:hover { background: #7c3aed; }
+        .btn-purple.active { background: #ef4444; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+        .stats { display: flex; gap: 24px; margin-left: auto; font-size: 14px; }
+        .stats .stat-item { display: flex; align-items: center; gap: 6px; }
+        .stats .num { font-weight: 700; font-size: 18px; }
+        .stat-green .num { color: #22c55e; }
+        .stat-red .num { color: #ef4444; }
+        .stat-gray .num { color: #94a3b8; }
+
+        .main-content { display: flex; height: calc(100vh - 140px); }
+
+        .sidebar {
+            width: 220px; background: #1e293b; padding: 16px;
+            border-right: 1px solid #334155; overflow-y: auto; flex-shrink: 0;
+        }
+        .sidebar h3 { font-size: 14px; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .image-card {
+            background: #334155; border-radius: 10px; padding: 10px;
+            margin-bottom: 12px; cursor: grab; transition: all 0.2s;
+            border: 2px solid transparent; position: relative;
+        }
+        .image-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
+        .image-card:active { cursor: grabbing; }
+        .image-card.dragging { opacity: 0.4; }
+        .image-card img { width: 100%; height: 100px; object-fit: cover; border-radius: 6px; pointer-events: none; }
+        .image-card .label { font-size: 12px; margin-top: 6px; text-align: center; color: #cbd5e1; }
+        .image-card .badge {
+            position: absolute; top: 6px; right: 6px;
+            padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+        }
+        .badge-bike { background: #22c55e; color: black; }
+        .badge-nonbike { background: #ef4444; color: white; }
+        .badge-pending { background: #f59e0b; color: black; }
+        .badge-dragging { background: #3b82f6; color: white; }
+
+        /* 场景区 */
+        .scene {
+            flex: 1; position: relative;
+            background: radial-gradient(ellipse at center, #1e293b 0%, #0f172a 100%);
+            overflow: hidden;
+        }
+
+        /* 停车位 */
+        .parking-zone {
+            position: absolute;
+            border: 3px dashed #f59e0b;
+            background: rgba(245, 158, 11, 0.08);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; flex-direction: column;
+            transition: all 0.3s; z-index: 1;
+        }
+        .parking-zone .zone-icon { font-size: 40px; opacity: 0.5; }
+        .parking-zone .zone-label { font-size: 14px; color: #f59e0b; opacity: 0.7; margin-top: 8px; }
+
+        /* 已放置图片 */
+        .placed-image {
+            position: absolute; width: 120px; height: 90px;
+            border-radius: 8px; object-fit: cover; z-index: 10;
+            cursor: move; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            transition: box-shadow 0.2s;
+        }
+        .placed-image:hover { box-shadow: 0 6px 20px rgba(59,130,246,0.4); }
+        .placed-image.compliant { border: 3px solid #22c55e; }
+        .placed-image.violation { border: 3px solid #ef4444; }
+        .placed-image .status-badge {
+            position: absolute; top: -12px; right: -12px;
+            width: 28px; height: 28px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; font-weight: bold;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .placed-image .status-badge.green { background: #22c55e; }
+        .placed-image .status-badge.red { background: #ef4444; }
+        .placed-image img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; pointer-events: none; }
+
+        /* 拖拽克隆 */
+        .drag-clone {
+            position: fixed; width: 120px; height: 90px;
+            border-radius: 8px; object-fit: cover; z-index: 1000;
+            pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            opacity: 0.9;
+        }
+
+        /* 手势光标 */
+        .gesture-cursor {
+            position: fixed; z-index: 999; pointer-events: none;
+            display: none; transform: translate(-50%, -50%);
+        }
+        .gesture-cursor .outer {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 2px solid rgba(59,130,246,0.6);
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.1s;
+        }
+        .gesture-cursor .inner {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #3b82f6; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.1s;
+        }
+        .gesture-cursor.pinching .outer {
+            width: 30px; height: 30px;
+            border-color: #22c55e; background: rgba(34,197,94,0.15);
+        }
+        .gesture-cursor.pinching .inner {
+            width: 14px; height: 14px;
+            background: #22c55e;
+        }
+
+        /* 摄像头小窗 */
+        .camera-preview {
+            position: absolute; bottom: 20px; right: 20px;
+            width: 200px; height: 150px; z-index: 100;
+            border-radius: 12px; overflow: hidden;
+            border: 2px solid #475569;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            opacity: 0.85; transition: opacity 0.3s;
+        }
+        .camera-preview:hover { opacity: 1; }
+        .camera-preview video {
+            width: 100%; height: 100%; object-fit: cover;
+            transform: scaleX(-1); /* 镜像 */
+        }
+        .camera-preview .cam-label {
+            position: absolute; top: 4px; left: 6px;
+            font-size: 11px; background: rgba(0,0,0,0.6);
+            padding: 2px 8px; border-radius: 4px; color: #94a3b8;
+        }
+        .cam-loading {
+            position: absolute; inset: 0; display: flex;
+            align-items: center; justify-content: center;
+            background: #1e293b; font-size: 12px; color: #94a3b8;
+        }
+
+        /* 提示文字 */
+        .hint {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center; color: #475569; z-index: 0; pointer-events: none;
+        }
+        .hint .big-icon { font-size: 60px; }
+        .hint p { font-size: 16px; margin-top: 12px; }
+
+        /* Toast */
+        .toast {
+            position: fixed; top: 20px; right: 20px;
+            padding: 16px 24px; border-radius: 12px;
+            font-weight: 600; z-index: 2000;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            display: none;
+        }
+        .toast.show { display: block; }
+        .toast.success { background: #22c55e; color: black; }
+        .toast.error { background: #ef4444; color: white; }
+        .toast.info { background: #3b82f6; color: white; }
+
+        @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1>🏫 <span>校园电动车</span>数字孪生监管系统</h1>
+        <div class="subtitle">北京城市学院 · 机器视觉与数字孪生技术课程设计</div>
+    </div>
+</div>
+
+<div class="toolbar">
+    <button class="btn btn-primary" id="btnDetect" onclick="detectAll()">🔍 YOLO 检测</button>
+    <button class="btn btn-purple" id="btnGesture" onclick="toggleGesture()">✋ 手势: 关</button>
+    <button class="btn btn-warning" onclick="resetAll()">🔄 重置</button>
+    <div class="stats">
+        <div class="stat-item stat-green">🟢 合规 <span class="num" id="countCompliant">0</span></div>
+        <div class="stat-item stat-red">🔴 违规 <span class="num" id="countViolation">0</span></div>
+        <div class="stat-item stat-gray">⏳ 待放 <span class="num" id="countPending">3</span></div>
+    </div>
+</div>
+
+<div class="main-content">
+    <div class="sidebar" id="imageList">
+        <h3>📷 图片资源</h3>
+        <div id="imageCards">加载中...</div>
+    </div>
+
+    <div class="scene" id="scene">
+        <div class="parking-zone" id="parkingZone">
+            <div class="zone-icon">🅿️</div>
+            <div class="zone-label">停车区域</div>
+        </div>
+
+        <div class="hint" id="hint">
+            <div class="big-icon">👆</div>
+            <p>从左侧拖拽图片到场景中</p>
+            <p style="font-size:13px;margin-top:6px;">点击「✋ 手势」开启摄像头手势控制</p>
+        </div>
+
+        <div id="placedContainer"></div>
+
+        <!-- 摄像头预览 -->
+        <div class="camera-preview" id="cameraPreview">
+            <div class="cam-loading" id="camLoading">📷 摄像头待启动</div>
+            <video id="webcam" playsinline style="display:none;"></video>
+            <div class="cam-label">📹 手势摄像头</div>
+        </div>
+    </div>
+</div>
+
+<!-- 手势光标 -->
+<div class="gesture-cursor" id="gestureCursor">
+    <div class="outer"></div>
+    <div class="inner"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ========== 图片数据 ==========
+let imageData = [];
+let placedCount = 0;
+
+// ========== 停车区配置 ==========
+const PARKING = { left: 0.15, top: 0.15, width: 0.7, height: 0.7 };
+
+// ========== 手势状态 ==========
+let gestureEnabled = false;
+let gestureReady = false;
+let gesture = { isPinching: false, x: 0, y: 0, prevPinching: false };
+let hands = null;
+let camera = null;
+
+// ========== 统一拖拽状态 ==========
+const drag = {
+    active: false,
+    sourceType: null,  // 'card' | 'placed'
+    sourceIdx: null,
+    clone: null,
+    offsetX: 0,
+    offsetY: 0,
+    placedEl: null,
+    placedOrigX: 0,
+    placedOrigY: 0,
+    cardEl: null       // 拖拽中的卡片DOM
+};
+
+// ========== 页面加载 ==========
+window.onload = function() {
+    loadImages();
+    positionParkingZone();
+    window.addEventListener('resize', positionParkingZone);
+};
+
+function positionParkingZone() {
+    const scene = document.getElementById('scene');
+    const zone = document.getElementById('parkingZone');
+    const w = scene.clientWidth;
+    const h = scene.clientHeight;
+    zone.style.left = (w * PARKING.left) + 'px';
+    zone.style.top = (h * PARKING.top) + 'px';
+    zone.style.width = (w * PARKING.width) + 'px';
+    zone.style.height = (h * PARKING.height) + 'px';
+}
+
+function getParkingRect() {
+    const w = document.getElementById('scene').clientWidth;
+    const h = document.getElementById('scene').clientHeight;
+    return {
+        left: w * PARKING.left, top: h * PARKING.top,
+        right: w * (PARKING.left + PARKING.width),
+        bottom: h * (PARKING.top + PARKING.height)
+    };
+}
+
+// ========== 统一拖拽核心函数 ==========
+// 开始拖拽
+function dragStart(itemType, idx, cx, cy, extra) {
+    if (drag.active) return;
+    drag.active = true;
+    drag.sourceType = itemType;
+    drag.sourceIdx = idx;
+
+    if (itemType === 'card') {
+        if (!imageData[idx] || !imageData[idx].isBicycle) {
+            drag.active = false;
+            showToast('⛔ 只有自行车可以拖入场景', 'info');
+            return;
+        }
+        // 创建克隆
+        const clone = document.createElement('img');
+        clone.className = 'drag-clone';
+        clone.src = imageData[idx].url;
+        document.body.appendChild(clone);
+        drag.clone = clone;
+        drag.offsetX = 60; drag.offsetY = 45;
+        drag.cardEl = extra?.cardEl || null;
+        if (drag.cardEl) drag.cardEl.classList.add('dragging');
+        dragMove(cx, cy);
+    } else if (itemType === 'placed') {
+        const el = extra?.el;
+        if (!el) { drag.active = false; return; }
+        drag.placedEl = el;
+        drag.offsetX = cx - el.getBoundingClientRect().left;
+        drag.offsetY = cy - el.getBoundingClientRect().top;
+        el.style.zIndex = 20;
+        dragMove(cx, cy);
+    }
+}
+
+// 移动拖拽
+function dragMove(cx, cy) {
+    if (!drag.active) return;
+    if (drag.clone) {
+        drag.clone.style.left = (cx - drag.offsetX) + 'px';
+        drag.clone.style.top = (cy - drag.offsetY) + 'px';
+    }
+    if (drag.placedEl) {
+        const scene = document.getElementById('scene');
+        const rect = scene.getBoundingClientRect();
+        let x = cx - rect.left - drag.offsetX;
+        let y = cy - rect.top - drag.offsetY;
+        x = Math.max(-60, Math.min(rect.width - 60, x));
+        y = Math.max(-45, Math.min(rect.height - 45, y));
+        drag.placedEl.style.left = x + 'px';
+        drag.placedEl.style.top = y + 'px';
+    }
+}
+
+// 结束拖拽
+function dragEnd(cx, cy) {
+    if (!drag.active) { cleanup(); return; }
+
+    if (drag.clone) { drag.clone.remove(); drag.clone = null; }
+    if (drag.cardEl) { drag.cardEl.classList.remove('dragging'); }
+
+    if (drag.sourceType === 'card') {
+        const scene = document.getElementById('scene');
+        const rect = scene.getBoundingClientRect();
+        const inScene = cx >= rect.left && cx <= rect.right &&
+                        cy >= rect.top && cy <= rect.bottom;
+        if (inScene) {
+            const relX = cx - rect.left;
+            const relY = cy - rect.top;
+            const zone = getParkingRect();
+            const inside = relX >= zone.left && relX <= zone.right &&
+                           relY >= zone.top && relY <= zone.bottom;
+            placeImage(drag.sourceIdx, Math.max(0, relX - 60), Math.max(0, relY - 45), inside);
+            showToast(inside ? '✅ 合规停放！' : '❌ 违规停放！', inside ? 'success' : 'error');
+        }
+    } else if (drag.sourceType === 'placed' && drag.placedEl) {
+        // 重新判断位置
+        const scene = document.getElementById('scene');
+        const rect = scene.getBoundingClientRect();
+        const elRect = drag.placedEl.getBoundingClientRect();
+        const cx2 = elRect.left + elRect.width/2 - rect.left;
+        const cy2 = elRect.top + elRect.height/2 - rect.top;
+        const zone = getParkingRect();
+        const inside = cx2 >= zone.left && cx2 <= zone.right &&
+                       cy2 >= zone.top && cy2 <= zone.bottom;
+        drag.placedEl.className = `placed-image ${inside ? 'compliant' : 'violation'}`;
+        const badge = drag.placedEl.querySelector('.status-badge');
+        badge.className = `status-badge ${inside ? 'green' : 'red'}`;
+        badge.textContent = inside ? '🟢' : '🔴';
+        if (drag.sourceIdx !== null && imageData[drag.sourceIdx]) {
+            imageData[drag.sourceIdx].compliant = inside;
+        }
+        drag.placedEl.style.zIndex = 10;
+        updateStats();
+        showToast(inside ? '✅ 合规停放' : '❌ 违规停放', inside ? 'success' : 'error');
+    }
+    cleanup();
+}
+
+function cleanup() {
+    drag.active = false;
+    drag.sourceType = null;
+    drag.sourceIdx = null;
+    drag.clone = null;
+    drag.offsetX = 0;
+    drag.offsetY = 0;
+    drag.placedEl = null;
+    drag.cardEl = null;
+}
+
+// ========== 鼠标事件绑定 ==========
+function bindMouseDrag() {
+    document.querySelectorAll('.image-card').forEach(card => {
+        const idx = parseInt(card.dataset.index);
+        card.addEventListener('mousedown', (e) => {
+            dragStart('card', idx, e.clientX, e.clientY, { cardEl: card });
+            e.preventDefault();
+        });
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (drag.active) dragMove(e.clientX, e.clientY);
+    });
+    document.addEventListener('mouseup', (e) => {
+        if (drag.active) dragEnd(e.clientX, e.clientY);
+    });
+}
+
+// ========== 放置图片到场景 ==========
+function placeImage(idx, x, y, isInside) {
+    const container = document.getElementById('placedContainer');
+    const img = imageData[idx];
+    if (!img) return;
+
+    // 检查是否已放置
+    const existing = container.querySelector(`.placed-image[data-idx="${idx}"]`);
+    if (existing) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = `placed-image ${isInside ? 'compliant' : 'violation'}`;
+    wrapper.style.left = x + 'px';
+    wrapper.style.top = y + 'px';
+    wrapper.dataset.idx = idx;
+
+    wrapper.innerHTML = `
+        <img src="${img.url}" alt="">
+        <div class="status-badge ${isInside ? 'green' : 'red'}">${isInside ? '🟢' : '🔴'}</div>
+    `;
+
+    // 鼠标拖动已放置图片
+    wrapper.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.status-badge')) return;
+        e.stopPropagation();
+        dragStart('placed', idx, e.clientX, e.clientY, { el: wrapper });
+        e.preventDefault();
+    });
+
+    container.appendChild(wrapper);
+    img.placed = true;
+    img.compliant = isInside;
+    placedCount++;
+    updateStats();
+}
+
+// ========== 加载图片 ==========
+async function loadImages() {
+    try {
+        const res = await fetch('/api/images');
+        const images = await res.json();
+        imageData = images.map(img => ({ ...img, isBicycle: null, detected: false, placed: false, compliant: false }));
+        renderImageCards();
+        bindMouseDrag();
+    } catch(e) {
+        document.getElementById('imageCards').innerHTML = '❌ 加载失败';
+    }
+}
+
+function renderImageCards() {
+    const container = document.getElementById('imageCards');
+    container.innerHTML = '';
+    imageData.forEach((img, idx) => {
+        const card = document.createElement('div');
+        card.className = 'image-card';
+        card.dataset.index = idx;
+        let badge = '';
+        if (img.detected) {
+            badge = img.isBicycle
+                ? '<span class="badge badge-bike">🚲 自行车</span>'
+                : '<span class="badge badge-nonbike">❌ 非自行车</span>';
+        } else {
+            badge = '<span class="badge badge-pending">⏳ 待检测</span>';
+        }
+        card.innerHTML = `
+            ${badge}
+            <img src="${img.url}" alt="${img.label}" onerror="this.style.display='none'">
+            <div class="label">${img.label}</div>
+        `;
+        container.appendChild(card);
+    });
+    updateStats();
+}
+
+// ========== YOLO 检测 ==========
+async function detectAll() {
+    const btn = document.getElementById('btnDetect');
+    btn.disabled = true; btn.textContent = '⏳ 检测中...';
+    for (let i = 0; i < imageData.length; i++) {
+        try {
+            const res = await fetch('/api/detect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file: imageData[i].file })
+            });
+            const data = await res.json();
+            imageData[i].detected = true;
+            imageData[i].isBicycle = data.has_bicycle;
+        } catch(e) { imageData[i].detected = false; }
+        renderImageCards();
+        bindMouseDrag();
+    }
+    btn.disabled = false; btn.textContent = '🔍 YOLO 检测';
+    showToast('✅ 检测完成！绿色=自行车，可拖入场景', 'success');
+}
+
+function updateStats() {
+    let compliant = 0, violation = 0, pending = 0;
+    imageData.forEach(img => {
+        if (img.placed) { if (img.compliant) compliant++; else violation++; }
+    });
+    pending = imageData.length - compliant - violation;
+    document.getElementById('countCompliant').textContent = compliant;
+    document.getElementById('countViolation').textContent = violation;
+    document.getElementById('countPending').textContent = pending;
+}
+
+function resetAll() {
+    document.getElementById('placedContainer').innerHTML = '';
+    imageData.forEach(img => { img.placed = false; img.compliant = false; });
+    placedCount = 0;
+    updateStats();
+    showToast('🔄 已重置', 'info');
+}
+
+function showToast(msg, type) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.className = 'toast show ' + type;
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+// ========== 手势识别 ==========
+function toggleGesture() {
+    const btn = document.getElementById('btnGesture');
+    if (!gestureEnabled) {
+        btn.textContent = '⏳ 启动中...';
+        btn.disabled = true;
+        initGesture();
+    } else {
+        stopGesture();
+    }
+}
+
+function initGesture() {
+    if (typeof Hands === 'undefined') {
+        showToast('❌ MediaPipe 加载失败，请检查网络', 'error');
+        document.getElementById('btnGesture').textContent = '✋ 手势: 不可用';
+        document.getElementById('btnGesture').disabled = false;
+        return;
+    }
+
+    const video = document.getElementById('webcam');
+    video.style.display = 'block';
+    document.getElementById('camLoading').textContent = '📷 启动摄像头...';
+
+    hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.5
+    });
+
+    hands.onResults((results) => {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const lm = results.multiHandLandmarks[0];
+            // 拇指指尖=4  食指指尖=8
+            const thumb = lm[4];
+            const index = lm[8];
+
+            // 映射到屏幕坐标
+            gesture.x = (1 - index.x) * window.innerWidth;
+            gesture.y = index.y * window.innerHeight;
+
+            // 捏合检测：拇指和食指指尖距离
+            const dx = thumb.x - index.x;
+            const dy = thumb.y - index.y;
+            const dz = (thumb.z - index.z) || 0;
+            const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            gesture.prevPinching = gesture.isPinching;
+            gesture.isPinching = dist < 0.045;
+
+            updateGestureCursor();
+            handleGestureDrag();
+        } else {
+            gesture.prevPinching = gesture.isPinching;
+            gesture.isPinching = false;
+            document.getElementById('gestureCursor').style.display = 'none';
+            if (gestureEnabled && drag.active) {
+                // 手离开画面，结束拖拽
+                dragEnd(gesture.x, gesture.y);
+            }
+        }
+    });
+
+    camera = new Camera(video, {
+        onFrame: async () => {
+            try { await hands.send({ image: video }); } catch(e) {}
+        },
+        width: 640, height: 480
+    });
+
+    camera.start().then(() => {
+        gestureReady = true;
+        gestureEnabled = true;
+        document.getElementById('camLoading').style.display = 'none';
+        document.getElementById('btnGesture').textContent = '✋ 手势: 开';
+        document.getElementById('btnGesture').className = 'btn btn-purple active';
+        document.getElementById('btnGesture').disabled = false;
+        showToast('✋ 手势控制已开启！捏合手指拖拽图片', 'success');
+        document.querySelector('.hint').innerHTML = `
+            <div class="big-icon">✋</div>
+            <p>手势控制已开启！</p>
+            <p style="font-size:13px;margin-top:6px;">捏合手指 🤏 抓取图片 → 移动 → 松开放置</p>
+        `;
+        // 手势光标默认隐藏，有手时才显示
+    }).catch(err => {
+        showToast('❌ 摄像头启动失败: ' + err.message, 'error');
+        document.getElementById('camLoading').textContent = '❌ 摄像头失败';
+        document.getElementById('btnGesture').textContent = '✋ 手势: 失败';
+        document.getElementById('btnGesture').disabled = false;
+        video.style.display = 'none';
+    });
+}
+
+function stopGesture() {
+    gestureEnabled = false;
+    gestureReady = false;
+    if (camera) { try { camera.stop(); } catch(e) {} camera = null; }
+    if (hands) { hands.close(); hands = null; }
+    document.getElementById('webcam').style.display = 'none';
+    document.getElementById('camLoading').textContent = '📷 摄像头已停止';
+    document.getElementById('camLoading').style.display = 'flex';
+    document.getElementById('btnGesture').textContent = '✋ 手势: 关';
+    document.getElementById('btnGesture').className = 'btn btn-purple';
+    document.getElementById('gestureCursor').style.display = 'none';
+    if (drag.active) dragEnd(gesture.x, gesture.y);
+}
+
+function updateGestureCursor() {
+    const cursor = document.getElementById('gestureCursor');
+    if (!gestureEnabled) { cursor.style.display = 'none'; return; }
+    cursor.style.display = 'block';
+    cursor.style.left = gesture.x + 'px';
+    cursor.style.top = gesture.y + 'px';
+    cursor.className = 'gesture-cursor' + (gesture.isPinching ? ' pinching' : '');
+}
+
+function handleGestureDrag() {
+    if (!gestureEnabled) return;
+
+    const pinching = gesture.isPinching;
+    const prev = gesture.prevPinching;
+
+    if (pinching && !prev) {
+        // 捏合开始 → 查找手势下方的元素
+        const el = document.elementFromPoint(gesture.x, gesture.y);
+        if (!el) return;
+
+        // 检查是否是已放置图片
+        const placed = el.closest('.placed-image');
+        if (placed) {
+            const idx = parseInt(placed.dataset.idx);
+            dragStart('placed', idx, gesture.x, gesture.y, { el: placed });
+            return;
+        }
+        // 检查是否是左侧卡片
+        const card = el.closest('.image-card');
+        if (card) {
+            const idx = parseInt(card.dataset.index);
+            dragStart('card', idx, gesture.x, gesture.y, { cardEl: card });
+            return;
+        }
+    } else if (pinching && prev) {
+        // 持续捏合 → 移动
+        if (drag.active) dragMove(gesture.x, gesture.y);
+    } else if (!pinching && prev) {
+        // 松开 → 结束拖拽
+        if (drag.active) dragEnd(gesture.x, gesture.y);
+    }
+}
+
+// 允许手势拖拽已放置图片的另一种方式：直接在dragMove中处理
+// 但手势通过handleGestureDrag已经处理了，所以不需要额外代码
+
+// 手势拖拽已放置图片时，手势x,y不在图片上也能拖动
+// 已通过dragStart('placed',...)正确处理
+
+// ========== 鼠标拖拽场景中的图片也统一走核心接口 ==========
+// 鼠标事件已在 bindMouseDrag 和 placeImage 中绑定
+// 它们现在都调用 dragStart/dragMove/dragEnd
+
+</script>
+</body>
+</html>
