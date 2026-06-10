@@ -1,444 +1,391 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <title>校园电动车数字孪生监管系统</title>
-    <!-- MediaPipe Hands CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
-        body { font-family: 'Microsoft YaHei', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-
-        .header {
-            background: linear-gradient(135deg, #1e293b, #334155);
-            padding: 20px 40px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 2px solid #3b82f6;
-            box-shadow: 0 4px 20px rgba(59,130,246,0.2);
-        }
-        .header h1 { font-size: 24px; font-weight: 700; }
-        .header h1 span { color: #3b82f6; }
-        .header .subtitle { font-size: 14px; color: #94a3b8; }
-
-        .toolbar {
-            display: flex; gap: 12px; padding: 12px 40px;
-            background: #1e293b; align-items: center; flex-wrap: wrap;
-            border-bottom: 1px solid #334155;
-        }
-        .btn {
-            padding: 8px 20px; border: none; border-radius: 8px;
-            font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-        }
-        .btn-primary { background: #3b82f6; color: white; }
-        .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
-        .btn-primary:disabled { background: #475569; cursor: not-allowed; transform: none; }
-        .btn-success { background: #22c55e; color: black; }
-        .btn-warning { background: #f59e0b; color: black; }
-        .btn-danger { background: #ef4444; color: white; }
-        .btn-purple { background: #8b5cf6; color: white; }
-        .btn-purple:hover { background: #7c3aed; }
-        .btn-purple.active { background: #ef4444; animation: pulse 1s infinite; }
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
-
-        .stats { display: flex; gap: 24px; margin-left: auto; font-size: 14px; }
-        .stats .stat-item { display: flex; align-items: center; gap: 6px; }
-        .stats .num { font-weight: 700; font-size: 18px; }
-        .stat-green .num { color: #22c55e; }
-        .stat-red .num { color: #ef4444; }
-        .stat-gray .num { color: #94a3b8; }
-
-        .main-content { display: flex; height: calc(100vh - 140px); }
-
-        .sidebar {
-            width: 220px; background: #1e293b; padding: 16px;
-            border-right: 1px solid #334155; overflow-y: auto; flex-shrink: 0;
-        }
-        .sidebar h3 { font-size: 14px; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
-        .image-card {
-            background: #334155; border-radius: 10px; padding: 10px;
-            margin-bottom: 12px; cursor: grab; transition: all 0.2s;
-            border: 2px solid transparent; position: relative;
-        }
-        .image-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
-        .image-card:active { cursor: grabbing; }
-        .image-card.dragging { opacity: 0.4; }
-        .image-card img { width: 100%; height: 100px; object-fit: cover; border-radius: 6px; pointer-events: none; }
-        .image-card .label { font-size: 12px; margin-top: 6px; text-align: center; color: #cbd5e1; }
-        .image-card .badge {
-            position: absolute; top: 6px; right: 6px;
-            padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
-        }
-        .badge-bike { background: #22c55e; color: black; }
-        .badge-nonbike { background: #ef4444; color: white; }
-        .badge-pending { background: #f59e0b; color: black; }
-        .badge-dragging { background: #3b82f6; color: white; }
-
-        /* 场景区 */
-        .scene {
-            flex: 1; position: relative;
-            background: radial-gradient(ellipse at center, #1e293b 0%, #0f172a 100%);
-            overflow: hidden;
-        }
-
-        /* 停车位 */
-        .parking-zone {
-            position: absolute;
-            border: 3px dashed #f59e0b;
-            background: rgba(245, 158, 11, 0.08);
-            border-radius: 12px;
-            display: flex; align-items: center; justify-content: center; flex-direction: column;
-            transition: all 0.3s; z-index: 1;
-        }
-        .parking-zone .zone-icon { font-size: 40px; opacity: 0.5; }
-        .parking-zone .zone-label { font-size: 14px; color: #f59e0b; opacity: 0.7; margin-top: 8px; }
-
-        /* 已放置图片 */
-        .placed-image {
-            position: absolute; width: 120px; height: 90px;
-            border-radius: 8px; object-fit: cover; z-index: 10;
-            cursor: move; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            transition: box-shadow 0.2s;
-        }
-        .placed-image:hover { box-shadow: 0 6px 20px rgba(59,130,246,0.4); }
-        .placed-image.compliant { border: 3px solid #22c55e; }
-        .placed-image.violation { border: 3px solid #ef4444; }
-        .placed-image .status-badge {
-            position: absolute; top: -12px; right: -12px;
-            width: 28px; height: 28px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 16px; font-weight: bold;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        }
-        .placed-image .status-badge.green { background: #22c55e; }
-        .placed-image .status-badge.red { background: #ef4444; }
-        .placed-image img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; pointer-events: none; }
-
-        /* 拖拽克隆 */
-        .drag-clone {
-            position: fixed; width: 120px; height: 90px;
-            border-radius: 8px; object-fit: cover; z-index: 1000;
-            pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-            opacity: 0.9;
-        }
-
-        /* 手势光标 */
-        .gesture-cursor {
-            position: fixed; z-index: 999; pointer-events: none;
-            display: none; transform: translate(-50%, -50%);
-        }
-        .gesture-cursor .outer {
-            width: 40px; height: 40px; border-radius: 50%;
-            border: 2px solid rgba(59,130,246,0.6);
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            transition: all 0.1s;
-        }
-        .gesture-cursor .inner {
-            width: 10px; height: 10px; border-radius: 50%;
-            background: #3b82f6; position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            transition: all 0.1s;
-        }
-        .gesture-cursor.pinching .outer {
-            width: 30px; height: 30px;
-            border-color: #22c55e; background: rgba(34,197,94,0.15);
-        }
-        .gesture-cursor.pinching .inner {
-            width: 14px; height: 14px;
-            background: #22c55e;
-        }
-
-        /* 摄像头小窗 */
-        .camera-preview {
-            position: absolute; bottom: 20px; right: 20px;
-            width: 200px; height: 150px; z-index: 100;
-            border-radius: 12px; overflow: hidden;
-            border: 2px solid #475569;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            opacity: 0.85; transition: opacity 0.3s;
-        }
-        .camera-preview:hover { opacity: 1; }
-        .camera-preview video {
-            width: 100%; height: 100%; object-fit: cover;
-            transform: scaleX(-1); /* 镜像 */
-        }
-        .camera-preview .cam-label {
-            position: absolute; top: 4px; left: 6px;
-            font-size: 11px; background: rgba(0,0,0,0.6);
-            padding: 2px 8px; border-radius: 4px; color: #94a3b8;
-        }
-        .cam-loading {
-            position: absolute; inset: 0; display: flex;
-            align-items: center; justify-content: center;
-            background: #1e293b; font-size: 12px; color: #94a3b8;
-        }
-
-        /* 提示文字 */
-        .hint {
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center; color: #475569; z-index: 0; pointer-events: none;
-        }
-        .hint .big-icon { font-size: 60px; }
-        .hint p { font-size: 16px; margin-top: 12px; }
-
-        /* Toast */
-        .toast {
-            position: fixed; top: 20px; right: 20px;
-            padding: 16px 24px; border-radius: 12px;
-            font-weight: 600; z-index: 2000;
-            animation: slideIn 0.3s ease;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-            display: none;
-        }
-        .toast.show { display: block; }
-        .toast.success { background: #22c55e; color: black; }
-        .toast.error { background: #ef4444; color: white; }
-        .toast.info { background: #3b82f6; color: white; }
-
-        @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-    </style>
+<meta charset="UTF-8">
+<title>校园电动车数字孪生监管系统</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;user-select:none}
+body{font-family:'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;height:100vh;overflow:hidden}
+.header{background:linear-gradient(135deg,#1e293b,#334155);padding:14px 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #3b82f6}
+.header h1{font-size:20px;font-weight:700}
+.header h1 span{color:#3b82f6}
+.header .subtitle{font-size:12px;color:#94a3b8}
+.toolbar{display:flex;gap:10px;padding:8px 30px;background:#1e293b;align-items:center;flex-wrap:wrap;border-bottom:1px solid #334155}
+.btn{padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary{background:#3b82f6;color:#fff}
+.btn-primary:hover{background:#2563eb}
+.btn-primary:disabled{background:#475569;cursor:not-allowed}
+.btn-purple{background:#8b5cf6;color:#fff}
+.btn-purple.active{background:#7c3aed;box-shadow:0 0 12px rgba(139,92,246,0.5)}
+.btn-warning{background:#f59e0b;color:#000}
+.btn-danger{background:#ef4444;color:#fff}
+.btn-success{background:#22c55e;color:#000}
+.stats{display:flex;gap:16px;margin-left:auto;font-size:13px}
+.stats .stat-item{display:flex;align-items:center;gap:4px}
+.stats .num{font-weight:700;font-size:16px}
+.stat-green .num{color:#22c55e}
+.stat-red .num{color:#ef4444}
+.main{display:flex;height:calc(100vh - 100px)}
+.sidebar{width:200px;background:#1e293b;padding:12px;border-right:1px solid #334155;overflow-y:auto;flex-shrink:0}
+.sidebar h3{font-size:13px;color:#94a3b8;margin-bottom:10px;letter-spacing:1px}
+.image-card{background:#334155;border-radius:8px;padding:8px;margin-bottom:10px;cursor:grab;transition:all .2s;border:2px solid transparent;position:relative}
+.image-card:hover{border-color:#3b82f6;transform:translateY(-2px)}
+.image-card:active{cursor:grabbing}
+.image-card img{width:100%;height:80px;object-fit:cover;border-radius:4px}
+.image-card .label{font-size:11px;margin-top:4px;text-align:center;color:#cbd5e1}
+.image-card .badge{position:absolute;top:4px;right:4px;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}
+.badge-bike{background:#22c55e;color:#000}
+.badge-nonbike{background:#ef4444;color:#fff}
+.badge-pending{background:#f59e0b;color:#000}
+.scene-wrap{flex:1;position:relative;overflow:hidden}
+#threeCanvas{width:100%;height:100%;display:block}
+.scene-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#475569;pointer-events:none;z-index:1;transition:opacity .5s}
+.scene-hint .icon{font-size:50px}
+.scene-hint p{font-size:14px;margin-top:8px}
+.scene-hint.hidden{opacity:0}
+.drag-clone{position:fixed;width:100px;height:75px;border-radius:6px;object-fit:cover;z-index:1000;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:.9}
+.gesture-cursor{position:fixed;z-index:999;pointer-events:none;transform:translate(-50%,-50%);display:none}
+.gesture-cursor .outer{width:40px;height:40px;border:2px solid rgba(139,92,246,0.6);border-radius:50%;transition:all .15s}
+.gesture-cursor .inner{width:8px;height:8px;background:#8b5cf6;border-radius:50%;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);transition:all .15s}
+.gesture-cursor.pinching .outer{width:28px;height:28px;border-color:rgba(239,68,68,0.8)}
+.gesture-cursor.pinching .inner{width:14px;height:14px;background:#ef4444}
+.cam-preview{position:absolute;bottom:12px;right:12px;width:180px;height:135px;border-radius:8px;overflow:hidden;border:2px solid #334155;z-index:50;opacity:0;transition:opacity .5s;background:#1e293b}
+.cam-preview.active{opacity:1}
+.cam-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.ui-label{position:absolute;z-index:20;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:600;pointer-events:none}
+.toast{position:fixed;top:16px;right:16px;padding:12px 20px;border-radius:8px;font-weight:600;z-index:2000;animation:slideIn .3s ease;box-shadow:0 8px 24px rgba(0,0,0,0.3);display:none;font-size:14px}
+.toast.show{display:block}
+.toast.success{background:#22c55e;color:#000}
+.toast.error{background:#ef4444;color:#fff}
+.toast.info{background:#3b82f6;color:#fff}
+@keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#1e293b}
+::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
+</style>
 </head>
 <body>
 
 <div class="header">
-    <div>
-        <h1>🏫 <span>校园电动车</span>数字孪生监管系统</h1>
-        <div class="subtitle">北京城市学院 · 机器视觉与数字孪生技术课程设计</div>
-    </div>
+<div><h1>🏫 <span>校园电动车</span>数字孪生监管系统</h1><div class="subtitle">北京城市学院 · 机器视觉与数字孪生技术</div></div>
 </div>
 
 <div class="toolbar">
-    <button class="btn btn-primary" id="btnDetect" onclick="detectAll()">🔍 YOLO 检测</button>
-    <button class="btn btn-purple" id="btnGesture" onclick="toggleGesture()">✋ 手势: 关</button>
-    <button class="btn btn-warning" onclick="resetAll()">🔄 重置</button>
-    <div class="stats">
-        <div class="stat-item stat-green">🟢 合规 <span class="num" id="countCompliant">0</span></div>
-        <div class="stat-item stat-red">🔴 违规 <span class="num" id="countViolation">0</span></div>
-        <div class="stat-item stat-gray">⏳ 待放 <span class="num" id="countPending">3</span></div>
-    </div>
+<button class="btn btn-primary" id="btnDetect" onclick="detectAll()">🔍 YOLO 检测</button>
+<button class="btn btn-purple" id="btnGesture" onclick="toggleGesture()">✋ 手势: 关</button>
+<button class="btn btn-warning" onclick="resetScene()">🔄 重置</button>
+<div class="stats">
+<div class="stat-item stat-green">🟢 合规 <span class="num" id="countCompliant">0</span></div>
+<div class="stat-item stat-red">🔴 违规 <span class="num" id="countViolation">0</span></div>
+</div>
 </div>
 
-<div class="main-content">
-    <div class="sidebar" id="imageList">
-        <h3>📷 图片资源</h3>
-        <div id="imageCards">加载中...</div>
-    </div>
-
-    <div class="scene" id="scene">
-        <div class="parking-zone" id="parkingZone">
-            <div class="zone-icon">🅿️</div>
-            <div class="zone-label">停车区域</div>
-        </div>
-
-        <div class="hint" id="hint">
-            <div class="big-icon">👆</div>
-            <p>从左侧拖拽图片到场景中</p>
-            <p style="font-size:13px;margin-top:6px;">点击「✋ 手势」开启摄像头手势控制</p>
-        </div>
-
-        <div id="placedContainer"></div>
-
-        <!-- 摄像头预览 -->
-        <div class="camera-preview" id="cameraPreview">
-            <div class="cam-loading" id="camLoading">📷 摄像头待启动</div>
-            <video id="webcam" playsinline style="display:none;"></video>
-            <div class="cam-label">📹 手势摄像头</div>
-        </div>
-    </div>
+<div class="main">
+<div class="sidebar" id="imageList">
+<h3>📷 图片资源</h3>
+<div id="imageCards">加载中...</div>
 </div>
 
-<!-- 手势光标 -->
-<div class="gesture-cursor" id="gestureCursor">
-    <div class="outer"></div>
-    <div class="inner"></div>
+<div class="scene-wrap" id="sceneWrap">
+<div class="scene-hint" id="sceneHint"><div class="icon">🏗️</div><p>加载3D场景中...</p></div>
+<div id="threeCanvas"></div>
+<div class="cam-preview" id="camPreview"><video id="camVideo" playsinline></video></div>
+<div class="gesture-cursor" id="gestureCursor"><div class="outer"><div class="inner"></div></div></div>
+</div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-// ========== 图片数据 ==========
+// ========== 全局状态 ==========
 let imageData = [];
-let placedCount = 0;
+const drag = { active: false, source: null, clone: null, offsetX: 50, offsetY: 37 };
 
-// ========== 停车区配置 ==========
-const PARKING = { left: 0.15, top: 0.15, width: 0.7, height: 0.7 };
+// ========== Three.js 场景 ==========
+let scene, camera, renderer, ground, parkingZone, bikeGroup;
+const BIKES = []; // 已放置的3D自行车 { mesh, idx, compliant }
 
-// ========== 手势状态 ==========
-let gestureEnabled = false;
-let gestureReady = false;
-let gesture = { isPinching: false, x: 0, y: 0, prevPinching: false };
-let hands = null;
-let camera = null;
+// 停车位世界坐标（3D场景中的矩形）
+const PARKING = { x: -5, z: -3, w: 10, h: 6 };
 
-// ========== 统一拖拽状态 ==========
-const drag = {
-    active: false,
-    sourceType: null,  // 'card' | 'placed'
-    sourceIdx: null,
-    clone: null,
-    offsetX: 0,
-    offsetY: 0,
-    placedEl: null,
-    placedOrigX: 0,
-    placedOrigY: 0,
-    cardEl: null       // 拖拽中的卡片DOM
-};
+function initThree() {
+    const container = document.getElementById('threeCanvas');
+    const w = container.clientWidth || 800;
+    const h = container.clientHeight || 500;
 
-// ========== 页面加载 ==========
-window.onload = function() {
-    loadImages();
-    positionParkingZone();
-    window.addEventListener('resize', positionParkingZone);
-};
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a2332);
 
-function positionParkingZone() {
-    const scene = document.getElementById('scene');
-    const zone = document.getElementById('parkingZone');
-    const w = scene.clientWidth;
-    const h = scene.clientHeight;
-    zone.style.left = (w * PARKING.left) + 'px';
-    zone.style.top = (h * PARKING.top) + 'px';
-    zone.style.width = (w * PARKING.width) + 'px';
-    zone.style.height = (h * PARKING.height) + 'px';
+    camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+    camera.position.set(12, 10, 12);
+    camera.lookAt(0, 0, 0);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    // 灯光
+    const ambient = new THREE.AmbientLight(0x404060, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(10, 20, 5);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+    fillLight.position.set(-5, 5, -10);
+    scene.add(fillLight);
+
+    // 地面
+    const groundGeo = new THREE.PlaneGeometry(30, 30);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a3a4a, roughness: 0.9 });
+    ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.05;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // 网格辅助
+    const grid = new THREE.GridHelper(30, 20, 0x4a5a6a, 0x3a4a5a);
+    grid.position.y = 0;
+    scene.add(grid);
+
+    // 停车位
+    drawParkingZone();
+
+    // 场景标签（停车位文字）
+    const label = document.createElement('div');
+    label.className = 'ui-label';
+    label.textContent = '🅿️ 停车区域';
+    label.style.background = 'rgba(245,158,11,0.2)';
+    label.style.color = '#f59e0b';
+    label.style.border = '1px solid #f59e0b';
+    label.id = 'parkingLabel';
+    container.appendChild(label);
+    updateLabelPos(label, (PARKING.x + PARKING.w/2), (PARKING.z + PARKING.h/2));
+
+    // 提示文字消失
+    document.getElementById('sceneHint').innerHTML = '<div class="icon">👆</div><p>从左侧拖拽自行车图片到场景中</p>';
+
+    // 窗口自适应
+    window.addEventListener('resize', () => {
+        const w2 = container.clientWidth;
+        const h2 = container.clientHeight;
+        camera.aspect = w2 / h2;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w2, h2);
+    });
+
+    animate();
 }
 
-function getParkingRect() {
-    const w = document.getElementById('scene').clientWidth;
-    const h = document.getElementById('scene').clientHeight;
+// 画停车位（3D黄色线框）
+function drawParkingZone() {
+    if (parkingZone) scene.remove(parkingZone);
+    const { x, z, w, h } = PARKING;
+    const points = [
+        new THREE.Vector3(x, 0.02, z),
+        new THREE.Vector3(x + w, 0.02, z),
+        new THREE.Vector3(x + w, 0.02, z + h),
+        new THREE.Vector3(x, 0.02, z + h),
+        new THREE.Vector3(x, 0.02, z)
+    ];
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 });
+    parkingZone = new THREE.Line(geo, mat);
+    scene.add(parkingZone);
+
+    // 半透明底面
+    const fillGeo = new THREE.PlaneGeometry(w, h);
+    const fillMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.06, side: THREE.DoubleSide });
+    const fill = new THREE.Mesh(fillGeo, fillMat);
+    fill.rotation.x = -Math.PI / 2;
+    fill.position.set(x + w/2, 0.01, z + h/2);
+    scene.add(fill);
+}
+
+// 3D自行车模型（用几何体组合）
+function createBike3D(color = 0x22c55e) {
+    const group = new THREE.Group();
+
+    // 车轮（两个扁圆柱）
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+    const wheelPos = [[-0.5, 0, 0], [0.5, 0, 0]];
+    wheelPos.forEach(([x, y, z]) => {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.08, 16), wheelMat);
+        wheel.rotation.x = Math.PI / 2;
+        wheel.position.set(x, y + 0.08, z);
+        group.add(wheel);
+        // 轮圈
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.03, 8, 16), new THREE.MeshStandardMaterial({ color: 0x666666 }));
+        rim.rotation.x = Math.PI / 2;
+        rim.position.set(x, y + 0.08, z);
+        group.add(rim);
+    });
+
+    // 车身
+    const bodyMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.3 });
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.12), bodyMat);
+    frame.position.set(0, 0.25, 0);
+    group.add(frame);
+
+    // 斜梁
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6), bodyMat);
+    bar.position.set(-0.2, 0.35, 0);
+    bar.rotation.z = 0.3;
+    group.add(bar);
+
+    // 坐垫
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.06, 0.1), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+    seat.position.set(-0.15, 0.42, 0);
+    group.add(seat);
+
+    // 车把
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3), barMat);
+    handle.position.set(0.55, 0.38, 0);
+    handle.rotation.z = Math.PI / 3;
+    group.add(handle);
+
+    group.scale.set(0.6, 0.6, 0.6);
+    return group;
+}
+
+// 将3D坐标投影到屏幕2D坐标
+function toScreenPos(x3d, z3d) {
+    const vec = new THREE.Vector3(x3d, 0, z3d);
+    vec.project(camera);
+    const container = document.getElementById('threeCanvas');
+    const rect = renderer.domElement.getBoundingClientRect();
     return {
-        left: w * PARKING.left, top: h * PARKING.top,
-        right: w * (PARKING.left + PARKING.width),
-        bottom: h * (PARKING.top + PARKING.height)
+        x: (vec.x * 0.5 + 0.5) * rect.width + rect.left,
+        y: (-vec.y * 0.5 + 0.5) * rect.height + rect.top
     };
 }
 
-// ========== 统一拖拽核心函数 ==========
-// 开始拖拽
-function dragStart(itemType, idx, cx, cy, extra) {
-    if (drag.active) return;
-    drag.active = true;
-    drag.sourceType = itemType;
-    drag.sourceIdx = idx;
-
-    if (itemType === 'card') {
-        if (!imageData[idx] || !imageData[idx].isBicycle) {
-            drag.active = false;
-            showToast('⛔ 只有自行车可以拖入场景', 'info');
-            return;
-        }
-        // 创建克隆
-        const clone = document.createElement('img');
-        clone.className = 'drag-clone';
-        clone.src = imageData[idx].url;
-        document.body.appendChild(clone);
-        drag.clone = clone;
-        drag.offsetX = 60; drag.offsetY = 45;
-        drag.cardEl = extra?.cardEl || null;
-        if (drag.cardEl) drag.cardEl.classList.add('dragging');
-        dragMove(cx, cy);
-    } else if (itemType === 'placed') {
-        const el = extra?.el;
-        if (!el) { drag.active = false; return; }
-        drag.placedEl = el;
-        drag.offsetX = cx - el.getBoundingClientRect().left;
-        drag.offsetY = cy - el.getBoundingClientRect().top;
-        el.style.zIndex = 20;
-        dragMove(cx, cy);
-    }
+// 更新UI标签位置
+function updateLabelPos(el, x3d, z3d) {
+    const pos = toScreenPos(x3d, z3d);
+    const container = document.getElementById('threeCanvas');
+    const rect = renderer.domElement.getBoundingClientRect();
+    el.style.left = (pos.x - rect.left - 40) + 'px';
+    el.style.top = (pos.y - rect.top - 15) + 'px';
 }
 
-// 移动拖拽
+// ========== 鼠标/触屏 → 3D坐标转换 ==========
+function screenTo3D(clientX, clientY) {
+    const container = document.getElementById('threeCanvas');
+    const rect = renderer.domElement.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+    const intersects = raycaster.intersectObject(ground);
+    if (intersects.length > 0) {
+        const p = intersects[0].point;
+        return { x: p.x, z: p.z };
+    }
+    return null;
+}
+
+// 判断是否在停车位内
+function isInParking(x3d, z3d) {
+    return x3d >= PARKING.x && x3d <= PARKING.x + PARKING.w &&
+           z3d >= PARKING.z && z3d <= PARKING.z + PARKING.h;
+}
+
+// 在3D场景中放置自行车
+function placeBikeInScene(imgIdx, x3d, z3d) {
+    const compliant = isInParking(x3d, z3d);
+    const color = compliant ? 0x22c55e : 0xef4444;
+    const bike = createBike3D(color);
+    bike.position.set(x3d, 0, z3d);
+    scene.add(bike);
+
+    BIKES.push({ mesh: bike, idx: imgIdx, compliant, x: x3d, z: z3d });
+    imageData[imgIdx].placed = true;
+    imageData[imgIdx].compliant = compliant;
+    updateStats();
+    return compliant;
+}
+
+// 动画循环
+function animate() {
+    requestAnimationFrame(animate);
+    // 自行车微微浮动
+    BIKES.forEach((b, i) => {
+        b.mesh.position.y = Math.sin(Date.now() / 1000 + i) * 0.03;
+    });
+    renderer.render(scene, camera);
+}
+
+// ========== 统一拖拽接口（鼠标+手势共用） ==========
+function dragStart(type, idx, cx, cy, opts) {
+    if (drag.active) return false;
+    if (type === 'card' && imageData[idx] && !imageData[idx].isBicycle) {
+        showToast('⛔ 只有自行车可以拖入场景', 'info');
+        return false;
+    }
+    drag.active = true;
+    drag.source = { type, idx };
+    drag.clone = null;
+    if (type === 'card') {
+        const img = document.createElement('img');
+        img.className = 'drag-clone';
+        img.src = imageData[idx].url;
+        document.body.appendChild(img);
+        drag.clone = img;
+        drag.offsetX = 50; drag.offsetY = 37;
+        img.style.left = (cx - 50) + 'px';
+        img.style.top = (cy - 37) + 'px';
+    } else if (type === 'placed') {
+        // 拖拽已放置的自行车（后面实现）
+    }
+    return true;
+}
+
 function dragMove(cx, cy) {
     if (!drag.active) return;
     if (drag.clone) {
         drag.clone.style.left = (cx - drag.offsetX) + 'px';
         drag.clone.style.top = (cy - drag.offsetY) + 'px';
     }
-    if (drag.placedEl) {
-        const scene = document.getElementById('scene');
-        const rect = scene.getBoundingClientRect();
-        let x = cx - rect.left - drag.offsetX;
-        let y = cy - rect.top - drag.offsetY;
-        x = Math.max(-60, Math.min(rect.width - 60, x));
-        y = Math.max(-45, Math.min(rect.height - 45, y));
-        drag.placedEl.style.left = x + 'px';
-        drag.placedEl.style.top = y + 'px';
+    // 在3D场景上显示预览
+    const pos = screenTo3D(cx, cy);
+    if (pos) {
+        // 可以加一个预览指示器
     }
 }
 
-// 结束拖拽
 function dragEnd(cx, cy) {
-    if (!drag.active) { cleanup(); return; }
-
+    if (!drag.active) return;
     if (drag.clone) { drag.clone.remove(); drag.clone = null; }
-    if (drag.cardEl) { drag.cardEl.classList.remove('dragging'); }
 
-    if (drag.sourceType === 'card') {
-        const scene = document.getElementById('scene');
-        const rect = scene.getBoundingClientRect();
-        const inScene = cx >= rect.left && cx <= rect.right &&
-                        cy >= rect.top && cy <= rect.bottom;
-        if (inScene) {
-            const relX = cx - rect.left;
-            const relY = cy - rect.top;
-            const zone = getParkingRect();
-            const inside = relX >= zone.left && relX <= zone.right &&
-                           relY >= zone.top && relY <= zone.bottom;
-            placeImage(drag.sourceIdx, Math.max(0, relX - 60), Math.max(0, relY - 45), inside);
-            showToast(inside ? '✅ 合规停放！' : '❌ 违规停放！', inside ? 'success' : 'error');
+    if (drag.source && drag.source.type === 'card') {
+        const pos = screenTo3D(cx, cy);
+        if (pos) {
+            // 限制在场景范围内
+            const x3d = Math.max(-12, Math.min(12, pos.x));
+            const z3d = Math.max(-12, Math.min(12, pos.z));
+            const compliant = placeBikeInScene(drag.source.idx, x3d, z3d);
+            showToast(
+                compliant ? '✅ 合规停放！自行车在停车区内' : '❌ 违规停放！自行车在停车区外',
+                compliant ? 'success' : 'error'
+            );
+        } else {
+            showToast('请拖到3D场景区域中', 'info');
         }
-    } else if (drag.sourceType === 'placed' && drag.placedEl) {
-        // 重新判断位置
-        const scene = document.getElementById('scene');
-        const rect = scene.getBoundingClientRect();
-        const elRect = drag.placedEl.getBoundingClientRect();
-        const cx2 = elRect.left + elRect.width/2 - rect.left;
-        const cy2 = elRect.top + elRect.height/2 - rect.top;
-        const zone = getParkingRect();
-        const inside = cx2 >= zone.left && cx2 <= zone.right &&
-                       cy2 >= zone.top && cy2 <= zone.bottom;
-        drag.placedEl.className = `placed-image ${inside ? 'compliant' : 'violation'}`;
-        const badge = drag.placedEl.querySelector('.status-badge');
-        badge.className = `status-badge ${inside ? 'green' : 'red'}`;
-        badge.textContent = inside ? '🟢' : '🔴';
-        if (drag.sourceIdx !== null && imageData[drag.sourceIdx]) {
-            imageData[drag.sourceIdx].compliant = inside;
-        }
-        drag.placedEl.style.zIndex = 10;
-        updateStats();
-        showToast(inside ? '✅ 合规停放' : '❌ 违规停放', inside ? 'success' : 'error');
     }
-    cleanup();
-}
-
-function cleanup() {
     drag.active = false;
-    drag.sourceType = null;
-    drag.sourceIdx = null;
-    drag.clone = null;
-    drag.offsetX = 0;
-    drag.offsetY = 0;
-    drag.placedEl = null;
-    drag.cardEl = null;
+    drag.source = null;
 }
 
 // ========== 鼠标事件绑定 ==========
 function bindMouseDrag() {
-    document.querySelectorAll('.image-card').forEach(card => {
-        const idx = parseInt(card.dataset.index);
-        card.addEventListener('mousedown', (e) => {
-            dragStart('card', idx, e.clientX, e.clientY, { cardEl: card });
-            e.preventDefault();
-        });
-    });
+    const sceneEl = document.getElementById('threeCanvas');
+
     document.addEventListener('mousemove', (e) => {
         if (drag.active) dragMove(e.clientX, e.clientY);
     });
@@ -447,50 +394,12 @@ function bindMouseDrag() {
     });
 }
 
-// ========== 放置图片到场景 ==========
-function placeImage(idx, x, y, isInside) {
-    const container = document.getElementById('placedContainer');
-    const img = imageData[idx];
-    if (!img) return;
-
-    // 检查是否已放置
-    const existing = container.querySelector(`.placed-image[data-idx="${idx}"]`);
-    if (existing) return;
-
-    const wrapper = document.createElement('div');
-    wrapper.className = `placed-image ${isInside ? 'compliant' : 'violation'}`;
-    wrapper.style.left = x + 'px';
-    wrapper.style.top = y + 'px';
-    wrapper.dataset.idx = idx;
-
-    wrapper.innerHTML = `
-        <img src="${img.url}" alt="">
-        <div class="status-badge ${isInside ? 'green' : 'red'}">${isInside ? '🟢' : '🔴'}</div>
-    `;
-
-    // 鼠标拖动已放置图片
-    wrapper.addEventListener('mousedown', (e) => {
-        if (e.target.closest('.status-badge')) return;
-        e.stopPropagation();
-        dragStart('placed', idx, e.clientX, e.clientY, { el: wrapper });
-        e.preventDefault();
-    });
-
-    container.appendChild(wrapper);
-    img.placed = true;
-    img.compliant = isInside;
-    placedCount++;
-    updateStats();
-}
-
-// ========== 加载图片 ==========
+// ========== 加载图片列表 ==========
 async function loadImages() {
     try {
         const res = await fetch('/api/images');
-        const images = await res.json();
-        imageData = images.map(img => ({ ...img, isBicycle: null, detected: false, placed: false, compliant: false }));
+        imageData = (await res.json()).map(img => ({ ...img, isBicycle: null, detected: false, placed: false, compliant: false }));
         renderImageCards();
-        bindMouseDrag();
     } catch(e) {
         document.getElementById('imageCards').innerHTML = '❌ 加载失败';
     }
@@ -503,33 +412,26 @@ function renderImageCards() {
         const card = document.createElement('div');
         card.className = 'image-card';
         card.dataset.index = idx;
-        let badge = '';
-        if (img.detected) {
-            badge = img.isBicycle
-                ? '<span class="badge badge-bike">🚲 自行车</span>'
-                : '<span class="badge badge-nonbike">❌ 非自行车</span>';
-        } else {
-            badge = '<span class="badge badge-pending">⏳ 待检测</span>';
-        }
-        card.innerHTML = `
-            ${badge}
-            <img src="${img.url}" alt="${img.label}" onerror="this.style.display='none'">
-            <div class="label">${img.label}</div>
-        `;
+        const badge = img.detected
+            ? (img.isBicycle ? '<span class="badge badge-bike">🚲</span>' : '<span class="badge badge-nonbike">❌</span>')
+            : '<span class="badge badge-pending">⏳</span>';
+        card.innerHTML = `${badge}<img src="${img.url}" onerror="this.src='data:image/svg+xml,...'"><div class="label">${img.label}</div>`;
+        card.addEventListener('mousedown', (e) => {
+            if (dragStart('card', idx, e.clientX, e.clientY)) e.preventDefault();
+        });
         container.appendChild(card);
     });
     updateStats();
 }
 
-// ========== YOLO 检测 ==========
+// ========== YOLO检测 ==========
 async function detectAll() {
     const btn = document.getElementById('btnDetect');
     btn.disabled = true; btn.textContent = '⏳ 检测中...';
     for (let i = 0; i < imageData.length; i++) {
         try {
             const res = await fetch('/api/detect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ file: imageData[i].file })
             });
             const data = await res.json();
@@ -537,203 +439,531 @@ async function detectAll() {
             imageData[i].isBicycle = data.has_bicycle;
         } catch(e) { imageData[i].detected = false; }
         renderImageCards();
-        bindMouseDrag();
     }
     btn.disabled = false; btn.textContent = '🔍 YOLO 检测';
-    showToast('✅ 检测完成！绿色=自行车，可拖入场景', 'success');
+    showToast('✅ 检测完成！绿色标记=自行车', 'success');
 }
 
+// ========== 统计 ==========
 function updateStats() {
-    let compliant = 0, violation = 0, pending = 0;
-    imageData.forEach(img => {
-        if (img.placed) { if (img.compliant) compliant++; else violation++; }
-    });
-    pending = imageData.length - compliant - violation;
-    document.getElementById('countCompliant').textContent = compliant;
-    document.getElementById('countViolation').textContent = violation;
-    document.getElementById('countPending').textContent = pending;
+    let c = 0, v = 0;
+    imageData.forEach(img => { if (img.placed) img.compliant ? c++ : v++; });
+    document.getElementById('countCompliant').textContent = c;
+    document.getElementById('countViolation').textContent = v;
 }
 
-function resetAll() {
-    document.getElementById('placedContainer').innerHTML = '';
+// ========== 重置 ==========
+function resetScene() {
+    BIKES.forEach(b => scene.remove(b.mesh));
+    BIKES.length = 0;
     imageData.forEach(img => { img.placed = false; img.compliant = false; });
-    placedCount = 0;
     updateStats();
     showToast('🔄 已重置', 'info');
 }
 
+// ========== Toast ==========
 function showToast(msg, type) {
-    const toast = document.getElementById('toast');
-    toast.textContent = msg;
-    toast.className = 'toast show ' + type;
-    clearTimeout(toast._timer);
-    toast._timer = setTimeout(() => toast.classList.remove('show'), 2000);
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-// ========== 手势识别 ==========
+// ========== 手势识别 (MediaPipe) ==========
+let gestureEnabled = false, gestureReady = false;
+let gesture = { isPinching: false, x: 0, y: 0, prevPinching: false };
+
 function toggleGesture() {
     const btn = document.getElementById('btnGesture');
     if (!gestureEnabled) {
-        btn.textContent = '⏳ 启动中...';
-        btn.disabled = true;
-        initGesture();
-    } else {
-        stopGesture();
-    }
+        if (!gestureReady) initGesture();
+        else { gestureEnabled = true; btn.textContent = '✋ 手势: 开'; btn.className = 'btn btn-purple active';
+               document.getElementById('gestureCursor').style.display = 'block';
+               document.getElementById('camPreview').classList.add('active'); }
+    } else { stopGesture(); }
 }
 
-function initGesture() {
-    if (typeof Hands === 'undefined') {
-        showToast('❌ MediaPipe 加载失败，请检查网络', 'error');
-        document.getElementById('btnGesture').textContent = '✋ 手势: 不可用';
-        document.getElementById('btnGesture').disabled = false;
-        return;
-    }
+async function initGesture() {
+    const btn = document.getElementById('btnGesture');
+    btn.textContent = '✋ 加载中...'; btn.disabled = true;
+    try {
+        const video = document.getElementById('camVideo');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+        video.srcObject = stream; await video.play();
 
-    const video = document.getElementById('webcam');
-    video.style.display = 'block';
-    document.getElementById('camLoading').textContent = '📷 启动摄像头...';
+        const { Hands } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js');
+        const { Camera } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js');
 
-    hands = new Hands({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-    });
-
-    hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.6,
-        minTrackingConfidence: 0.5
-    });
-
-    hands.onResults((results) => {
-        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-            const lm = results.multiHandLandmarks[0];
-            // 拇指指尖=4  食指指尖=8
-            const thumb = lm[4];
-            const index = lm[8];
-
-            // 映射到屏幕坐标
-            gesture.x = (1 - index.x) * window.innerWidth;
-            gesture.y = index.y * window.innerHeight;
-
-            // 捏合检测：拇指和食指指尖距离
-            const dx = thumb.x - index.x;
-            const dy = thumb.y - index.y;
-            const dz = (thumb.z - index.z) || 0;
-            const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            gesture.prevPinching = gesture.isPinching;
-            gesture.isPinching = dist < 0.045;
-
-            updateGestureCursor();
-            handleGestureDrag();
-        } else {
-            gesture.prevPinching = gesture.isPinching;
-            gesture.isPinching = false;
-            document.getElementById('gestureCursor').style.display = 'none';
-            if (gestureEnabled && drag.active) {
-                // 手离开画面，结束拖拽
-                dragEnd(gesture.x, gesture.y);
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
+                const lm = results.multiHandLandmarks[0];
+                const thumb = lm[4], index = lm[8];
+                gesture.x = (1 - index.x) * window.innerWidth;
+                gesture.y = index.y * window.innerHeight;
+                gesture.prevPinching = gesture.isPinching;
+                const dx = thumb.x - index.x, dy = thumb.y - index.y;
+                gesture.isPinching = (dx*dx + dy*dy) < 0.002;
+                updateGestureCursor();
+                handleGestureDrag();
+            } else {
+                gesture.prevPinching = gesture.isPinching;
+                gesture.isPinching = false;
+                if (gestureEnabled && drag.active) dragEnd(gesture.x, gesture.y);
             }
-        }
-    });
+        });
 
-    camera = new Camera(video, {
-        onFrame: async () => {
-            try { await hands.send({ image: video }); } catch(e) {}
-        },
-        width: 640, height: 480
-    });
+        const cam = new Camera(video, {
+            onFrame: async () => { await hands.send({ image: video }); },
+            width: 640, height: 480
+        });
+        cam.start();
 
-    camera.start().then(() => {
-        gestureReady = true;
-        gestureEnabled = true;
-        document.getElementById('camLoading').style.display = 'none';
-        document.getElementById('btnGesture').textContent = '✋ 手势: 开';
-        document.getElementById('btnGesture').className = 'btn btn-purple active';
-        document.getElementById('btnGesture').disabled = false;
-        showToast('✋ 手势控制已开启！捏合手指拖拽图片', 'success');
-        document.querySelector('.hint').innerHTML = `
-            <div class="big-icon">✋</div>
-            <p>手势控制已开启！</p>
-            <p style="font-size:13px;margin-top:6px;">捏合手指 🤏 抓取图片 → 移动 → 松开放置</p>
-        `;
-        // 手势光标默认隐藏，有手时才显示
-    }).catch(err => {
-        showToast('❌ 摄像头启动失败: ' + err.message, 'error');
-        document.getElementById('camLoading').textContent = '❌ 摄像头失败';
-        document.getElementById('btnGesture').textContent = '✋ 手势: 失败';
-        document.getElementById('btnGesture').disabled = false;
-        video.style.display = 'none';
-    });
+        gestureReady = true; gestureEnabled = true;
+        btn.textContent = '✋ 手势: 开'; btn.className = 'btn btn-purple active';
+        document.getElementById('gestureCursor').style.display = 'block';
+        document.getElementById('camPreview').classList.add('active');
+    } catch(e) {
+        btn.textContent = '✋ 手势: 不可用'; btn.disabled = false;
+        showToast('❌ 摄像头/手势加载失败: ' + e.message, 'error');
+    }
 }
 
 function stopGesture() {
     gestureEnabled = false;
-    gestureReady = false;
-    if (camera) { try { camera.stop(); } catch(e) {} camera = null; }
-    if (hands) { hands.close(); hands = null; }
-    document.getElementById('webcam').style.display = 'none';
-    document.getElementById('camLoading').textContent = '📷 摄像头已停止';
-    document.getElementById('camLoading').style.display = 'flex';
     document.getElementById('btnGesture').textContent = '✋ 手势: 关';
     document.getElementById('btnGesture').className = 'btn btn-purple';
     document.getElementById('gestureCursor').style.display = 'none';
+    document.getElementById('camPreview').classList.remove('active');
     if (drag.active) dragEnd(gesture.x, gesture.y);
 }
 
 function updateGestureCursor() {
-    const cursor = document.getElementById('gestureCursor');
-    if (!gestureEnabled) { cursor.style.display = 'none'; return; }
-    cursor.style.display = 'block';
-    cursor.style.left = gesture.x + 'px';
-    cursor.style.top = gesture.y + 'px';
-    cursor.className = 'gesture-cursor' + (gesture.isPinching ? ' pinching' : '');
+    const c = document.getElementById('gestureCursor');
+    if (!gestureEnabled) { c.style.display = 'none'; return; }
+    c.style.left = gesture.x + 'px'; c.style.top = gesture.y + 'px';
+    c.className = 'gesture-cursor' + (gesture.isPinching ? ' pinching' : '');
 }
 
 function handleGestureDrag() {
     if (!gestureEnabled) return;
-
-    const pinching = gesture.isPinching;
-    const prev = gesture.prevPinching;
-
-    if (pinching && !prev) {
-        // 捏合开始 → 查找手势下方的元素
+    if (gesture.isPinching && !gesture.prevPinching) {
         const el = document.elementFromPoint(gesture.x, gesture.y);
-        if (!el) return;
-
-        // 检查是否是已放置图片
-        const placed = el.closest('.placed-image');
-        if (placed) {
-            const idx = parseInt(placed.dataset.idx);
-            dragStart('placed', idx, gesture.x, gesture.y, { el: placed });
-            return;
-        }
-        // 检查是否是左侧卡片
-        const card = el.closest('.image-card');
+        const card = el?.closest('.image-card');
         if (card) {
             const idx = parseInt(card.dataset.index);
-            dragStart('card', idx, gesture.x, gesture.y, { cardEl: card });
-            return;
+            dragStart('card', idx, gesture.x, gesture.y);
         }
-    } else if (pinching && prev) {
-        // 持续捏合 → 移动
+    } else if (gesture.isPinching && gesture.prevPinching) {
         if (drag.active) dragMove(gesture.x, gesture.y);
-    } else if (!pinching && prev) {
-        // 松开 → 结束拖拽
+    } else if (!gesture.isPinching && gesture.prevPinching) {
         if (drag.active) dragEnd(gesture.x, gesture.y);
     }
 }
 
-// 允许手势拖拽已放置图片的另一种方式：直接在dragMove中处理
-// 但手势通过handleGestureDrag已经处理了，所以不需要额外代码
+// ========== 初始化 ==========
+window.onload = function() {
+    initThree();
+    bindMouseDrag();
+    loadImages();
+};
 
-// 手势拖拽已放置图片时，手势x,y不在图片上也能拖动
-// 已通过dragStart('placed',...)正确处理
+// ============ Three.js 3D场景 ============
+let scene, camera, renderer, ground;
+const PARKING={x1:-5,z1:-4,x2:5,z2:4};
 
-// ========== 鼠标拖拽场景中的图片也统一走核心接口 ==========
-// 鼠标事件已在 bindMouseDrag 和 placeImage 中绑定
-// 它们现在都调用 dragStart/dragMove/dragEnd
+function initScene(){
+  const box=document.getElementById('scene3d');
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x87ceeb);
+  camera=new THREE.PerspectiveCamera(45,box.clientWidth/box.clientHeight,0.1,100);
+  camera.position.set(0,18,16);
+  camera.lookAt(0,0,0);
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(box.clientWidth,box.clientHeight);
+  renderer.shadowMap.enabled=true;
+  box.appendChild(renderer.domElement);
 
+  // 灯光
+  const amb=new THREE.AmbientLight(0xffffff,0.6);
+  scene.add(amb);
+  const dir=new THREE.DirectionalLight(0xffffff,0.8);
+  dir.position.set(10,20,10);
+  dir.castShadow=true;
+  scene.add(dir);
+
+  // 草地
+  const gGeo=new THREE.PlaneGeometry(40,28);
+  const gMat=new THREE.MeshLambertMaterial({color:0x7ec87e});
+  ground=new THREE.Mesh(gGeo,gMat);
+  ground.rotation.x=-Math.PI/2;
+  ground.position.set(0,0,0);
+  ground.receiveShadow=true;
+  scene.add(ground);
+
+  // 网格
+  scene.add(new THREE.GridHelper(40,20,0x555555,0x444444));
+
+  // 道路
+  const roadMat=new THREE.MeshLambertMaterial({color:0x666666});
+  const r1=new THREE.Mesh(new THREE.PlaneGeometry(40,4),roadMat);
+  r1.rotation.x=-Math.PI/2;r1.position.set(0,0.01,-10);
+  scene.add(r1);
+  const r2=new THREE.Mesh(new THREE.PlaneGeometry(4,28),roadMat);
+  r2.rotation.x=-Math.PI/2;r2.position.set(-12,0.01,0);
+  scene.add(r2);
+
+  // 建筑
+  const colors=[0x4a90d9,0x8b7355,0x6b8e23,0xcd853f];
+  const blds=[
+    {x:-10,z:-10,w:8,h:4,d:6,c:colors[0]},
+    {x:-14,z:4,w:5,h:2.5,d:5,c:colors[1]},
+    {x:10,z:-8,w:6,h:3,d:5,c:colors[2]},
+    {x:12,z:6,w:7,h:3.5,d:5,c:colors[3]},
+    {x:-8,z:10,w:6,h:2,d:4,c:0xa0522d},
+  ];
+  blds.forEach(b=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(b.w,b.h,b.d),new THREE.MeshLambertMaterial({color:b.c}));
+    m.position.set(b.x,b.h/2,b.z);m.castShadow=true;
+    scene.add(m);
+  });
+
+  // 树
+  const trees=[
+    [-15,-6],[-16,0],[-15,6],[8,-12],[9,-5],[11,4],[14,8],[-6,-12],[-4,8]
+  ];
+  trees.forEach(t=>{
+    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.2,0.8),new THREE.MeshLambertMaterial({color:0x8B4513}));
+    trunk.position.set(t[0],0.4,t[1]);
+    scene.add(trunk);
+    const crown=new THREE.Mesh(new THREE.SphereGeometry(0.6),new THREE.MeshLambertMaterial({color:0x2d8a2d}));
+    crown.position.set(t[0],1.0,t[1]);
+    scene.add(crown);
+  });
+
+  // 停车位
+  drawParking();
+
+  window.addEventListener('resize',()=>{
+    const w=box.clientWidth,h=box.clientHeight;
+    camera.aspect=w/h;camera.updateProjectionMatrix();
+    renderer.setSize(w,h);
+  });
+
+  animate();
+}
+
+function drawParking(){
+  const pts=[
+    new THREE.Vector3(PARKING.x1,0.02,PARKING.z1),
+    new THREE.Vector3(PARKING.x2,0.02,PARKING.z1),
+    new THREE.Vector3(PARKING.x2,0.02,PARKING.z2),
+    new THREE.Vector3(PARKING.x1,0.02,PARKING.z2),
+  ];
+  const g=new THREE.BufferGeometry().setFromPoints(pts.concat(pts[0]));
+  const mat=new THREE.LineBasicMaterial({color:0xf59e0b,linewidth:3});
+  scene.add(new THREE.Line(g,mat));
+
+  // 停车位底部半透明填充
+  const fill=new THREE.Mesh(
+    new THREE.PlaneGeometry(PARKING.x2-PARKING.x1,PARKING.z2-PARKING.z1),
+    new THREE.MeshLambertMaterial({color:0xf59e0b,transparent:true,opacity:0.12})
+  );
+  fill.rotation.x=-Math.PI/2;
+  fill.position.set((PARKING.x1+PARKING.x2)/2,0.015,(PARKING.z1+PARKING.z2)/2);
+  scene.add(fill);
+
+  // "P" 文字用 Sprite
+  const canvas=document.createElement('canvas'); canvas.width=128; canvas.height=128;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='rgba(245,158,11,0.6)';ctx.font='bold 80px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('P',64,64);
+  const tex=new THREE.CanvasTexture(canvas);
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true}));
+  spr.position.set((PARKING.x1+PARKING.x2)/2,1.5,(PARKING.z1+PARKING.z2)/2);
+  spr.scale.set(2,2,1);
+  scene.add(spr);
+}
+
+function isInParking(x,z){
+  return x>=PARKING.x1&&x<=PARKING.x2&&z>=PARKING.z1&&z<=PARKING.z2;
+}
+
+function createBike3D(color){
+  const group=new THREE.Group();
+  // 车轮
+  const wheelGeo=new THREE.TorusGeometry(0.4,0.12,8,12);
+  const wheelMat=new THREE.MeshLambertMaterial({color:0x222222});
+  const w1=new THREE.Mesh(wheelGeo,wheelMat);w1.position.set(-0.4,0.2,0);w1.rotation.y=Math.PI/2;
+  const w2=new THREE.Mesh(wheelGeo,wheelMat);w2.position.set(0.4,0.2,0);w2.rotation.y=Math.PI/2;
+  group.add(w1);group.add(w2);
+  // 车架
+  const frameMat=new THREE.MeshLambertMaterial({color});
+  const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.8),frameMat);
+  bar.rotation.z=Math.PI/2;bar.position.set(0,0.4,0);
+  group.add(bar);
+  // 三角架
+  const tri=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.5),frameMat);
+  tri.position.set(-0.15,0.35,0);tri.rotation.z=0.6;
+  group.add(tri);
+  const tri2=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.5),frameMat);
+  tri2.position.set(0.15,0.35,0);tri2.rotation.z=-0.6;
+  group.add(tri2);
+  // 坐垫
+  const seat=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.04,0.08),new THREE.MeshLambertMaterial({color:0x333333}));
+  seat.position.set(-0.15,0.55,0);
+  group.add(seat);
+  // 车把
+  const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.25),new THREE.MeshLambertMaterial({color:0x333333}));
+  handle.position.set(0.4,0.45,0);handle.rotation.z=0.3;
+  group.add(handle);
+  return group;
+}
+
+function placeBike(idx,x3d,z3d){
+  const color=isInParking(x3d,z3d)?0x22c55e:0xef4444;
+  const bike=createBike3D(color);
+  bike.position.set(x3d,0,z3d);
+  scene.add(bike);
+  placed[idx]={mesh:bike,idx,x:x3d,z:z3d,compliant:color===0x22c55e};
+  updateStats();
+  toast(color===0x22c55e?'✅ 合规停放':'❌ 违规停放',color===0x22c55e?'ok':'err');
+}
+
+function moveBike(idx,x3d,z3d){
+  if(!placed[idx]||!placed[idx].mesh)return;
+  const color=isInParking(x3d,z3d)?0x22c55e:0xef4444;
+  placed[idx].mesh.position.set(x3d,0,z3d);
+  placed[idx].x=x3d;placed[idx].z=z3d;placed[idx].compliant=color===0x22c55e;
+  // 更新颜色（重建）
+  scene.remove(placed[idx].mesh);
+  const bike=createBike3D(color);
+  bike.position.set(x3d,0,z3d);
+  scene.add(bike);
+  placed[idx].mesh=bike;
+  updateStats();
+  toast(color===0x22c55e?'✅ 合规停放':'❌ 违规停放',color===0x22c55e?'ok':'err');
+}
+
+// ============ 3D鼠标拖拽(已放置的自行车) ============
+function setup3DDrag(){
+  const canvas=renderer.domElement;
+  let selected=null, selIdx=-1, isDragging3d=false;
+  let planeIntersect=new THREE.Vector3();
+
+  canvas.addEventListener('mousedown',e=>{
+    const rect=canvas.getBoundingClientRect();
+    const mouse=new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
+    const raycaster=new THREE.Raycaster();raycaster.setFromCamera(mouse,camera);
+    // 检测自行车
+    const bikes=Object.values(placed).filter(p=>p.mesh).map(p=>p.mesh);
+    const hits=raycaster.intersectObjects(bikes,true);
+    if(hits.length>0){
+      let obj=hits[0].object;
+      while(obj.parent&&!Object.values(placed).find(p=>p.mesh===obj))obj=obj.parent;
+      const entry=Object.values(placed).find(p=>p.mesh===obj);
+      if(entry){selected=entry.mesh;selIdx=entry.idx;isDragging3d=true;
+        const plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+        raycaster.ray.intersectPlane(plane,planeIntersect);
+        drag.offX=planeIntersect.x-selected.position.x;
+        drag.offZ=planeIntersect.z-selected.position.z;
+      }
+    }
+  });
+
+  canvas.addEventListener('mousemove',e=>{
+    if(!isDragging3d||!selected)return;
+    const rect=canvas.getBoundingClientRect();
+    const mouse=new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
+    const raycaster=new THREE.Raycaster();raycaster.setFromCamera(mouse,camera);
+    const plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+    raycaster.ray.intersectPlane(plane,planeIntersect);
+    const x=Math.max(-18,Math.min(18,planeIntersect.x-drag.offX));
+    const z=Math.max(-12,Math.min(12,planeIntersect.z-drag.offZ));
+    selected.position.set(x,0,z);
+  });
+
+  canvas.addEventListener('mouseup',e=>{
+    if(!isDragging3d||!selected||selIdx<0){isDragging3d=false;return}
+    const x=selected.position.x,z=selected.position.z;
+    const color=isInParking(x,z)?0x22c55e:0xef4444;
+    if(placed[selIdx]){
+      placed[selIdx].x=x;placed[selIdx].z=z;placed[selIdx].compliant=color===0x22c55e;
+      scene.remove(selected);
+      const bike=createBike3D(color);bike.position.set(x,0,z);
+      scene.add(bike);
+      placed[selIdx].mesh=bike;
+      updateStats();
+    }
+    selected=null;selIdx=-1;isDragging3d=false;
+  });
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  renderer.render(scene,camera);
+}
+
+function updateStats(){
+  const vals=Object.values(placed).filter(p=>p.mesh);
+  let ok=vals.filter(v=>v.compliant).length;
+  let bad=vals.filter(v=>!v.compliant).length;
+  document.getElementById('ctOk').textContent=ok;
+  document.getElementById('ctBad').textContent=bad;
+  document.getElementById('ctPlaced').textContent=vals.length;
+}
+
+function toast(msg,type){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.className='toast show '+type;
+  clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.remove('show'),2000);
+}
+
+function resetAll(){
+  Object.values(placed).filter(p=>p.mesh).forEach(p=>scene.remove(p.mesh));
+  placed={};
+  updateStats();
+  toast('🔄 已重置','info');
+}
+
+// ============ 手势控制 ============
+let gestureEnabled=false, gestureReady=false;
+const gesture={isPinching:false,x:0,y:0,prev:false};
+
+function toggleGesture(){
+  if(gestureEnabled){stopGesture();return}
+  initGesture();
+}
+
+function initGesture(){
+  const btn=document.getElementById('btnGesture');
+  btn.textContent='✋ 手势:加载中';btn.disabled=true;
+  const video=document.getElementById('webcam');
+  const camBox=document.getElementById('camBox');
+  camBox.style.display='block';
+
+  const hands=new Hands({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/hands/'+f});
+  hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.5,minTrackingConfidence:.5});
+
+  hands.onResults(results=>{
+    if(results.multiHandLandmarks&&results.multiHandLandmarks.length>0){
+      const lm=results.multiHandLandmarks[0];
+      const thumb=lm[4],index=lm[8];
+      gesture.x=(1-index.x)*window.innerWidth;
+      gesture.y=index.y*window.innerHeight;
+      const d=Math.hypot((thumb.x-index.x)*3,(thumb.y-index.y)*3,(thumb.z-index.z)*3);
+      gesture.prev=gesture.isPinching;
+      gesture.isPinching=d<0.045;
+      updateCursor();
+      handleGestureDrag();
+    }else{
+      gesture.prev=gesture.isPinching;
+      gesture.isPinching=false;
+      updateCursor();
+    }
+  });
+
+  const camera2=new Camera(video,{
+    onFrame:async()=>{await hands.send({image:video})},
+    width:320,height:240
+  });
+  camera2.start().then(()=>{
+    gestureReady=true;gestureEnabled=true;
+    btn.textContent='✋ 手势:开';btn.className='btn btn-purple active';btn.disabled=false;
+  }).catch(()=>{
+    btn.textContent='✋ 手势:失败';btn.disabled=false;
+  });
+}
+
+function stopGesture(){
+  gestureEnabled=false;gestureReady=false;
+  document.getElementById('camBox').style.display='none';
+  document.getElementById('cursor').style.display='none';
+  document.getElementById('btnGesture').textContent='✋ 手势:关';
+  document.getElementById('btnGesture').className='btn btn-purple';
+  if(drag.active) endDrag(gesture.x,gesture.y);
+}
+
+function updateCursor(){
+  const c=document.getElementById('cursor');
+  if(!gestureEnabled){c.style.display='none';return}
+  c.style.display='block';
+  c.style.left=gesture.x+'px';c.style.top=gesture.y+'px';
+  c.className=gesture.isPinching?'pinch':'';
+}
+
+function handleGestureDrag(){
+  if(!gestureEnabled)return;
+  const pinching=gesture.isPinching,prev=gesture.prev;
+  if(pinching&&!prev){
+    // 捏合开始：检测是否在3D场景中
+    const el=document.elementFromPoint(gesture.x,gesture.y);
+    if(!el)return;
+    const canvas=document.querySelector('#scene3d canvas');
+    if(!canvas)return;
+    const rect=canvas.getBoundingClientRect();
+    if(gesture.x<rect.left||gesture.x>rect.right||gesture.y<rect.top||gesture.y>rect.bottom)return;
+    const mouse=new THREE.Vector2(
+      ((gesture.x-rect.left)/rect.width)*2-1,
+      -((gesture.y-rect.top)/rect.height)*2+1
+    );
+    const r=new THREE.Raycaster();r.setFromCamera(mouse,camera);
+    const bikes=Object.values(placed).filter(p=>p.mesh).map(p=>p.mesh);
+    const hits=r.intersectObjects(bikes,true);
+    if(hits.length>0){
+      let obj=hits[0].object;
+      while(obj.parent&&!Object.values(placed).find(p=>p.mesh===obj))obj=obj.parent;
+      const entry=Object.values(placed).find(p=>p.mesh===obj);
+      if(entry){
+        drag.active=true;drag.source='gesture';drag.bikeIdx=entry.idx;
+        drag.el3d=entry.mesh;
+        const plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+        r.ray.intersectPlane(plane,new THREE.Vector3());
+        drag.offX=0;drag.offY=0;
+      }
+    }else{
+      // 手势从空白处开始不处理，后续跟踪
+      drag.active=false;
+    }
+  }else if(pinching&&prev){
+    if(drag.active&&drag.el3d){
+      const canvas=document.querySelector('#scene3d canvas');
+      const rect=canvas.getBoundingClientRect();
+      const mouse=new THREE.Vector2(
+        ((gesture.x-rect.left)/rect.width)*2-1,
+        -((gesture.y-rect.top)/rect.height)*2+1
+      );
+      const r=new THREE.Raycaster();r.setFromCamera(mouse,camera);
+      const plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+      const pt=new THREE.Vector3();
+      r.ray.intersectPlane(plane,pt);
+      const x=Math.max(-18,Math.min(18,pt.x));
+      const z=Math.max(-12,Math.min(12,pt.z));
+      drag.el3d.position.set(x,0,z);
+    }
+  }else if(!pinching&&prev){
+    if(drag.active&&drag.el3d&&drag.bikeIdx>=0){
+      const x=drag.el3d.position.x,z=drag.el3d.position.z;
+      const color=isInParking(x,z)?0x22c55e:0xef4444;
+      if(placed[drag.bikeIdx]){
+        placed[drag.bikeIdx].x=x;placed[drag.bikeIdx].z=z;
+        placed[drag.bikeIdx].compliant=color===0x22c55e;
+        scene.remove(drag.el3d);
+        const bike=createBike3D(color);bike.position.set(x,0,z);
+        scene.add(bike);
+        placed[drag.bikeIdx].mesh=bike;
+        updateStats();
+      }
+    }
+    drag.active=false;drag.source=null;drag.el3d=null;drag.bikeIdx=-1;
+  }
+}
+
+// ============ 初始化 ============
+loadImgs();
+setTimeout(()=>{initScene();setup3DDrag()},100);
 </script>
+</body>
+</html></script>
 </body>
 </html>
