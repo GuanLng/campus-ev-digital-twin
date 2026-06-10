@@ -1,0 +1,583 @@
+# 用Python写大文件（避免工具截断）
+import os
+
+html = r'''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>校园电动车数字孪生监管系统</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;user-select:none}
+body{font-family:'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;height:100vh;overflow:hidden}
+.header{background:linear-gradient(135deg,#1e293b,#334155);padding:14px 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #3b82f6}
+.header h1{font-size:20px;font-weight:700}
+.header h1 span{color:#3b82f6}
+.header .subtitle{font-size:12px;color:#94a3b8}
+.toolbar{display:flex;gap:10px;padding:8px 30px;background:#1e293b;align-items:center;flex-wrap:wrap;border-bottom:1px solid #334155}
+.btn{padding:6px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary{background:#3b82f6;color:#fff}
+.btn-primary:hover{background:#2563eb}
+.btn-primary:disabled{background:#475569;cursor:not-allowed}
+.btn-purple{background:#8b5cf6;color:#fff}
+.btn-purple.active{background:#7c3aed;box-shadow:0 0 12px rgba(139,92,246,0.5)}
+.btn-warning{background:#f59e0b;color:#000}
+.btn-danger{background:#ef4444;color:#fff}
+.btn-success{background:#22c55e;color:#000}
+.stats{display:flex;gap:16px;margin-left:auto;font-size:13px}
+.stats .stat-item{display:flex;align-items:center;gap:4px}
+.stats .num{font-weight:700;font-size:16px}
+.stat-green .num{color:#22c55e}
+.stat-red .num{color:#ef4444}
+.main{display:flex;height:calc(100vh - 100px)}
+.sidebar{width:200px;background:#1e293b;padding:12px;border-right:1px solid #334155;overflow-y:auto;flex-shrink:0}
+.sidebar h3{font-size:13px;color:#94a3b8;margin-bottom:10px;letter-spacing:1px}
+.image-card{background:#334155;border-radius:8px;padding:8px;margin-bottom:10px;cursor:grab;transition:all .2s;border:2px solid transparent;position:relative}
+.image-card:hover{border-color:#3b82f6;transform:translateY(-2px)}
+.image-card:active{cursor:grabbing}
+.image-card img{width:100%;height:80px;object-fit:cover;border-radius:4px}
+.image-card .label{font-size:11px;margin-top:4px;text-align:center;color:#cbd5e1}
+.image-card .badge{position:absolute;top:4px;right:4px;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}
+.badge-bike{background:#22c55e;color:#000}
+.badge-nonbike{background:#ef4444;color:#fff}
+.badge-pending{background:#f59e0b;color:#000}
+.scene-wrap{flex:1;position:relative;overflow:hidden}
+#threeCanvas{width:100%;height:100%;display:block}
+.scene-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#475569;pointer-events:none;z-index:1;transition:opacity .5s}
+.scene-hint .icon{font-size:50px}
+.scene-hint p{font-size:14px;margin-top:8px}
+.scene-hint.hidden{opacity:0}
+.drag-clone{position:fixed;width:100px;height:75px;border-radius:6px;object-fit:cover;z-index:1000;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:.9}
+.gesture-cursor{position:fixed;z-index:999;pointer-events:none;transform:translate(-50%,-50%);display:none}
+.gesture-cursor .outer{width:40px;height:40px;border:2px solid rgba(139,92,246,0.6);border-radius:50%;transition:all .15s}
+.gesture-cursor .inner{width:8px;height:8px;background:#8b5cf6;border-radius:50%;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);transition:all .15s}
+.gesture-cursor.pinching .outer{width:28px;height:28px;border-color:rgba(239,68,68,0.8)}
+.gesture-cursor.pinching .inner{width:14px;height:14px;background:#ef4444}
+.cam-preview{position:absolute;bottom:12px;right:12px;width:180px;height:135px;border-radius:8px;overflow:hidden;border:2px solid #334155;z-index:50;opacity:0;transition:opacity .5s;background:#1e293b}
+.cam-preview.active{opacity:1}
+.cam-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.ui-label{position:absolute;z-index:20;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:600;pointer-events:none}
+.toast{position:fixed;top:16px;right:16px;padding:12px 20px;border-radius:8px;font-weight:600;z-index:2000;animation:slideIn .3s ease;box-shadow:0 8px 24px rgba(0,0,0,0.3);display:none;font-size:14px}
+.toast.show{display:block}
+.toast.success{background:#22c55e;color:#000}
+.toast.error{background:#ef4444;color:#fff}
+.toast.info{background:#3b82f6;color:#fff}
+@keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#1e293b}
+::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="header">
+<div><h1>🏫 <span>校园电动车</span>数字孪生监管系统</h1><div class="subtitle">北京城市学院 · 机器视觉与数字孪生技术</div></div>
+</div>
+
+<div class="toolbar">
+<button class="btn btn-primary" id="btnDetect" onclick="detectAll()">🔍 YOLO 检测</button>
+<button class="btn btn-purple" id="btnGesture" onclick="toggleGesture()">✋ 手势: 关</button>
+<button class="btn btn-warning" onclick="resetScene()">🔄 重置</button>
+<div class="stats">
+<div class="stat-item stat-green">🟢 合规 <span class="num" id="countCompliant">0</span></div>
+<div class="stat-item stat-red">🔴 违规 <span class="num" id="countViolation">0</span></div>
+</div>
+</div>
+
+<div class="main">
+<div class="sidebar" id="imageList">
+<h3>📷 图片资源</h3>
+<div id="imageCards">加载中...</div>
+</div>
+
+<div class="scene-wrap" id="sceneWrap">
+<div class="scene-hint" id="sceneHint"><div class="icon">🏗️</div><p>加载3D场景中...</p></div>
+<div id="threeCanvas"></div>
+<div class="cam-preview" id="camPreview"><video id="camVideo" playsinline></video></div>
+<div class="gesture-cursor" id="gestureCursor"><div class="outer"><div class="inner"></div></div></div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ========== 全局状态 ==========
+let imageData = [];
+const drag = { active: false, source: null, clone: null, offsetX: 50, offsetY: 37 };
+
+// ========== Three.js 场景 ==========
+let scene, camera, renderer, ground, parkingZone, bikeGroup;
+const BIKES = []; // 已放置的3D自行车 { mesh, idx, compliant }
+
+// 停车位世界坐标（3D场景中的矩形）
+const PARKING = { x: -5, z: -3, w: 10, h: 6 };
+
+function initThree() {
+    const container = document.getElementById('threeCanvas');
+    const w = container.clientWidth || 800;
+    const h = container.clientHeight || 500;
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a2332);
+
+    camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+    camera.position.set(12, 10, 12);
+    camera.lookAt(0, 0, 0);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    // 灯光
+    const ambient = new THREE.AmbientLight(0x404060, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(10, 20, 5);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+    fillLight.position.set(-5, 5, -10);
+    scene.add(fillLight);
+
+    // 地面
+    const groundGeo = new THREE.PlaneGeometry(30, 30);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a3a4a, roughness: 0.9 });
+    ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.05;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // 网格辅助
+    const grid = new THREE.GridHelper(30, 20, 0x4a5a6a, 0x3a4a5a);
+    grid.position.y = 0;
+    scene.add(grid);
+
+    // 停车位
+    drawParkingZone();
+
+    // 场景标签（停车位文字）
+    const label = document.createElement('div');
+    label.className = 'ui-label';
+    label.textContent = '🅿️ 停车区域';
+    label.style.background = 'rgba(245,158,11,0.2)';
+    label.style.color = '#f59e0b';
+    label.style.border = '1px solid #f59e0b';
+    label.id = 'parkingLabel';
+    container.appendChild(label);
+    updateLabelPos(label, (PARKING.x + PARKING.w/2), (PARKING.z + PARKING.h/2));
+
+    // 提示文字消失
+    document.getElementById('sceneHint').innerHTML = '<div class="icon">👆</div><p>从左侧拖拽自行车图片到场景中</p>';
+
+    // 窗口自适应
+    window.addEventListener('resize', () => {
+        const w2 = container.clientWidth;
+        const h2 = container.clientHeight;
+        camera.aspect = w2 / h2;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w2, h2);
+    });
+
+    animate();
+}
+
+// 画停车位（3D黄色线框）
+function drawParkingZone() {
+    if (parkingZone) scene.remove(parkingZone);
+    const { x, z, w, h } = PARKING;
+    const points = [
+        new THREE.Vector3(x, 0.02, z),
+        new THREE.Vector3(x + w, 0.02, z),
+        new THREE.Vector3(x + w, 0.02, z + h),
+        new THREE.Vector3(x, 0.02, z + h),
+        new THREE.Vector3(x, 0.02, z)
+    ];
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 });
+    parkingZone = new THREE.Line(geo, mat);
+    scene.add(parkingZone);
+
+    // 半透明底面
+    const fillGeo = new THREE.PlaneGeometry(w, h);
+    const fillMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.06, side: THREE.DoubleSide });
+    const fill = new THREE.Mesh(fillGeo, fillMat);
+    fill.rotation.x = -Math.PI / 2;
+    fill.position.set(x + w/2, 0.01, z + h/2);
+    scene.add(fill);
+}
+
+// 3D自行车模型（用几何体组合）
+function createBike3D(color = 0x22c55e) {
+    const group = new THREE.Group();
+
+    // 车轮（两个扁圆柱）
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+    const wheelPos = [[-0.5, 0, 0], [0.5, 0, 0]];
+    wheelPos.forEach(([x, y, z]) => {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.08, 16), wheelMat);
+        wheel.rotation.x = Math.PI / 2;
+        wheel.position.set(x, y + 0.08, z);
+        group.add(wheel);
+        // 轮圈
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.03, 8, 16), new THREE.MeshStandardMaterial({ color: 0x666666 }));
+        rim.rotation.x = Math.PI / 2;
+        rim.position.set(x, y + 0.08, z);
+        group.add(rim);
+    });
+
+    // 车身
+    const bodyMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.3 });
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.12), bodyMat);
+    frame.position.set(0, 0.25, 0);
+    group.add(frame);
+
+    // 斜梁
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6), bodyMat);
+    bar.position.set(-0.2, 0.35, 0);
+    bar.rotation.z = 0.3;
+    group.add(bar);
+
+    // 坐垫
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.06, 0.1), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+    seat.position.set(-0.15, 0.42, 0);
+    group.add(seat);
+
+    // 车把
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3), barMat);
+    handle.position.set(0.55, 0.38, 0);
+    handle.rotation.z = Math.PI / 3;
+    group.add(handle);
+
+    group.scale.set(0.6, 0.6, 0.6);
+    return group;
+}
+
+// 将3D坐标投影到屏幕2D坐标
+function toScreenPos(x3d, z3d) {
+    const vec = new THREE.Vector3(x3d, 0, z3d);
+    vec.project(camera);
+    const container = document.getElementById('threeCanvas');
+    const rect = renderer.domElement.getBoundingClientRect();
+    return {
+        x: (vec.x * 0.5 + 0.5) * rect.width + rect.left,
+        y: (-vec.y * 0.5 + 0.5) * rect.height + rect.top
+    };
+}
+
+// 更新UI标签位置
+function updateLabelPos(el, x3d, z3d) {
+    const pos = toScreenPos(x3d, z3d);
+    const container = document.getElementById('threeCanvas');
+    const rect = renderer.domElement.getBoundingClientRect();
+    el.style.left = (pos.x - rect.left - 40) + 'px';
+    el.style.top = (pos.y - rect.top - 15) + 'px';
+}
+
+// ========== 鼠标/触屏 → 3D坐标转换 ==========
+function screenTo3D(clientX, clientY) {
+    const container = document.getElementById('threeCanvas');
+    const rect = renderer.domElement.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+    const intersects = raycaster.intersectObject(ground);
+    if (intersects.length > 0) {
+        const p = intersects[0].point;
+        return { x: p.x, z: p.z };
+    }
+    return null;
+}
+
+// 判断是否在停车位内
+function isInParking(x3d, z3d) {
+    return x3d >= PARKING.x && x3d <= PARKING.x + PARKING.w &&
+           z3d >= PARKING.z && z3d <= PARKING.z + PARKING.h;
+}
+
+// 在3D场景中放置自行车
+function placeBikeInScene(imgIdx, x3d, z3d) {
+    const compliant = isInParking(x3d, z3d);
+    const color = compliant ? 0x22c55e : 0xef4444;
+    const bike = createBike3D(color);
+    bike.position.set(x3d, 0, z3d);
+    scene.add(bike);
+
+    BIKES.push({ mesh: bike, idx: imgIdx, compliant, x: x3d, z: z3d });
+    imageData[imgIdx].placed = true;
+    imageData[imgIdx].compliant = compliant;
+    updateStats();
+    return compliant;
+}
+
+// 动画循环
+function animate() {
+    requestAnimationFrame(animate);
+    // 自行车微微浮动
+    BIKES.forEach((b, i) => {
+        b.mesh.position.y = Math.sin(Date.now() / 1000 + i) * 0.03;
+    });
+    renderer.render(scene, camera);
+}
+
+// ========== 统一拖拽接口（鼠标+手势共用） ==========
+function dragStart(type, idx, cx, cy, opts) {
+    if (drag.active) return false;
+    if (type === 'card' && imageData[idx] && !imageData[idx].isBicycle) {
+        showToast('⛔ 只有自行车可以拖入场景', 'info');
+        return false;
+    }
+    drag.active = true;
+    drag.source = { type, idx };
+    drag.clone = null;
+    if (type === 'card') {
+        const img = document.createElement('img');
+        img.className = 'drag-clone';
+        img.src = imageData[idx].url;
+        document.body.appendChild(img);
+        drag.clone = img;
+        drag.offsetX = 50; drag.offsetY = 37;
+        img.style.left = (cx - 50) + 'px';
+        img.style.top = (cy - 37) + 'px';
+    } else if (type === 'placed') {
+        // 拖拽已放置的自行车（后面实现）
+    }
+    return true;
+}
+
+function dragMove(cx, cy) {
+    if (!drag.active) return;
+    if (drag.clone) {
+        drag.clone.style.left = (cx - drag.offsetX) + 'px';
+        drag.clone.style.top = (cy - drag.offsetY) + 'px';
+    }
+    // 在3D场景上显示预览
+    const pos = screenTo3D(cx, cy);
+    if (pos) {
+        // 可以加一个预览指示器
+    }
+}
+
+function dragEnd(cx, cy) {
+    if (!drag.active) return;
+    if (drag.clone) { drag.clone.remove(); drag.clone = null; }
+
+    if (drag.source && drag.source.type === 'card') {
+        const pos = screenTo3D(cx, cy);
+        if (pos) {
+            // 限制在场景范围内
+            const x3d = Math.max(-12, Math.min(12, pos.x));
+            const z3d = Math.max(-12, Math.min(12, pos.z));
+            const compliant = placeBikeInScene(drag.source.idx, x3d, z3d);
+            showToast(
+                compliant ? '✅ 合规停放！自行车在停车区内' : '❌ 违规停放！自行车在停车区外',
+                compliant ? 'success' : 'error'
+            );
+        } else {
+            showToast('请拖到3D场景区域中', 'info');
+        }
+    }
+    drag.active = false;
+    drag.source = null;
+}
+
+// ========== 鼠标事件绑定 ==========
+function bindMouseDrag() {
+    const sceneEl = document.getElementById('threeCanvas');
+
+    document.addEventListener('mousemove', (e) => {
+        if (drag.active) dragMove(e.clientX, e.clientY);
+    });
+    document.addEventListener('mouseup', (e) => {
+        if (drag.active) dragEnd(e.clientX, e.clientY);
+    });
+}
+
+// ========== 加载图片列表 ==========
+async function loadImages() {
+    try {
+        const res = await fetch('/api/images');
+        imageData = (await res.json()).map(img => ({ ...img, isBicycle: null, detected: false, placed: false, compliant: false }));
+        renderImageCards();
+    } catch(e) {
+        document.getElementById('imageCards').innerHTML = '❌ 加载失败';
+    }
+}
+
+function renderImageCards() {
+    const container = document.getElementById('imageCards');
+    container.innerHTML = '';
+    imageData.forEach((img, idx) => {
+        const card = document.createElement('div');
+        card.className = 'image-card';
+        card.dataset.index = idx;
+        const badge = img.detected
+            ? (img.isBicycle ? '<span class="badge badge-bike">🚲</span>' : '<span class="badge badge-nonbike">❌</span>')
+            : '<span class="badge badge-pending">⏳</span>';
+        card.innerHTML = `${badge}<img src="${img.url}" onerror="this.src='data:image/svg+xml,...'"><div class="label">${img.label}</div>`;
+        card.addEventListener('mousedown', (e) => {
+            if (dragStart('card', idx, e.clientX, e.clientY)) e.preventDefault();
+        });
+        container.appendChild(card);
+    });
+    updateStats();
+}
+
+// ========== YOLO检测 ==========
+async function detectAll() {
+    const btn = document.getElementById('btnDetect');
+    btn.disabled = true; btn.textContent = '⏳ 检测中...';
+    for (let i = 0; i < imageData.length; i++) {
+        try {
+            const res = await fetch('/api/detect', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file: imageData[i].file })
+            });
+            const data = await res.json();
+            imageData[i].detected = true;
+            imageData[i].isBicycle = data.has_bicycle;
+        } catch(e) { imageData[i].detected = false; }
+        renderImageCards();
+    }
+    btn.disabled = false; btn.textContent = '🔍 YOLO 检测';
+    showToast('✅ 检测完成！绿色标记=自行车', 'success');
+}
+
+// ========== 统计 ==========
+function updateStats() {
+    let c = 0, v = 0;
+    imageData.forEach(img => { if (img.placed) img.compliant ? c++ : v++; });
+    document.getElementById('countCompliant').textContent = c;
+    document.getElementById('countViolation').textContent = v;
+}
+
+// ========== 重置 ==========
+function resetScene() {
+    BIKES.forEach(b => scene.remove(b.mesh));
+    BIKES.length = 0;
+    imageData.forEach(img => { img.placed = false; img.compliant = false; });
+    updateStats();
+    showToast('🔄 已重置', 'info');
+}
+
+// ========== Toast ==========
+function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ========== 手势识别 (MediaPipe) ==========
+let gestureEnabled = false, gestureReady = false;
+let gesture = { isPinching: false, x: 0, y: 0, prevPinching: false };
+
+function toggleGesture() {
+    const btn = document.getElementById('btnGesture');
+    if (!gestureEnabled) {
+        if (!gestureReady) initGesture();
+        else { gestureEnabled = true; btn.textContent = '✋ 手势: 开'; btn.className = 'btn btn-purple active';
+               document.getElementById('gestureCursor').style.display = 'block';
+               document.getElementById('camPreview').classList.add('active'); }
+    } else { stopGesture(); }
+}
+
+async function initGesture() {
+    const btn = document.getElementById('btnGesture');
+    btn.textContent = '✋ 加载中...'; btn.disabled = true;
+    try {
+        const video = document.getElementById('camVideo');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+        video.srcObject = stream; await video.play();
+
+        const { Hands } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js');
+        const { Camera } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js');
+
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
+                const lm = results.multiHandLandmarks[0];
+                const thumb = lm[4], index = lm[8];
+                gesture.x = (1 - index.x) * window.innerWidth;
+                gesture.y = index.y * window.innerHeight;
+                gesture.prevPinching = gesture.isPinching;
+                const dx = thumb.x - index.x, dy = thumb.y - index.y;
+                gesture.isPinching = (dx*dx + dy*dy) < 0.002;
+                updateGestureCursor();
+                handleGestureDrag();
+            } else {
+                gesture.prevPinching = gesture.isPinching;
+                gesture.isPinching = false;
+                if (gestureEnabled && drag.active) dragEnd(gesture.x, gesture.y);
+            }
+        });
+
+        const cam = new Camera(video, {
+            onFrame: async () => { await hands.send({ image: video }); },
+            width: 640, height: 480
+        });
+        cam.start();
+
+        gestureReady = true; gestureEnabled = true;
+        btn.textContent = '✋ 手势: 开'; btn.className = 'btn btn-purple active';
+        document.getElementById('gestureCursor').style.display = 'block';
+        document.getElementById('camPreview').classList.add('active');
+    } catch(e) {
+        btn.textContent = '✋ 手势: 不可用'; btn.disabled = false;
+        showToast('❌ 摄像头/手势加载失败: ' + e.message, 'error');
+    }
+}
+
+function stopGesture() {
+    gestureEnabled = false;
+    document.getElementById('btnGesture').textContent = '✋ 手势: 关';
+    document.getElementById('btnGesture').className = 'btn btn-purple';
+    document.getElementById('gestureCursor').style.display = 'none';
+    document.getElementById('camPreview').classList.remove('active');
+    if (drag.active) dragEnd(gesture.x, gesture.y);
+}
+
+function updateGestureCursor() {
+    const c = document.getElementById('gestureCursor');
+    if (!gestureEnabled) { c.style.display = 'none'; return; }
+    c.style.left = gesture.x + 'px'; c.style.top = gesture.y + 'px';
+    c.className = 'gesture-cursor' + (gesture.isPinching ? ' pinching' : '');
+}
+
+function handleGestureDrag() {
+    if (!gestureEnabled) return;
+    if (gesture.isPinching && !gesture.prevPinching) {
+        const el = document.elementFromPoint(gesture.x, gesture.y);
+        const card = el?.closest('.image-card');
+        if (card) {
+            const idx = parseInt(card.dataset.index);
+            dragStart('card', idx, gesture.x, gesture.y);
+        }
+    } else if (gesture.isPinching && gesture.prevPinching) {
+        if (drag.active) dragMove(gesture.x, gesture.y);
+    } else if (!gesture.isPinching && gesture.prevPinching) {
+        if (drag.active) dragEnd(gesture.x, gesture.y);
+    }
+}
+
+// ========== 初始化 ==========
+window.onload = function() {
+    initThree();
+    bindMouseDrag();
+    loadImages();
+};
+</script>
+</body>
+</html>'''
+
+# 写入文件
+with open('templates/index.html', 'w', encoding='utf-8') as f:
+    f.write(html)
+
+print(f'写入完成: {os.path.getsize("templates/index.html")} bytes')
+print(f'包含Three.js: {"three.min.js" in html}')
+print(f'包含MediaPipe: {"@mediapipe/hands" in html}')

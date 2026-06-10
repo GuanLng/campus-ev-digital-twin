@@ -11,7 +11,11 @@ parts.append('''<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <title>校园电动车数字孪生监管系统</title>
+<link rel="icon" href="data:,">
 <script src="/static/three.min.js"></script>
+<script src="/static/camera_utils.js"></script>
+<script src="/static/drawing_utils.js"></script>
+<script src="/static/hands.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none}
 body{font-family:'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;height:100vh;overflow:hidden}
@@ -92,6 +96,7 @@ body{font-family:'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;h
 parts.append('''
 let scene, camera, renderer, ground;
 const PARKING={x1:-5,z1:-4,x2:5,z2:4};
+const BIKE_COLORS=[0x22c55e,0x3b82f6,0xef4444,0xf59e0b,0x8b5cf6,0xec4899];
 let IMGS=[], placed={};
 const drag={active:false,source:null,clone:null,offX:0,offY:0,el3d:null,bikeIdx:-1};
 
@@ -110,21 +115,47 @@ function initScene(){
   const gMat=new THREE.MeshLambertMaterial({color:0x7ec87e});
   ground=new THREE.Mesh(new THREE.PlaneGeometry(40,28),gMat);
   ground.rotation.x=-Math.PI/2; ground.position.set(0,0,0); ground.receiveShadow=true; scene.add(ground);
+  // 不可见的点击平面（覆盖整个地面，用于拖拽放置检测）
+  const clickPlane=new THREE.Mesh(new THREE.PlaneGeometry(40,28),new THREE.MeshBasicMaterial({visible:false,depthWrite:false}));
+  clickPlane.rotation.x=-Math.PI/2; clickPlane.position.set(0,0,0); clickPlane.name='clickPlane'; scene.add(clickPlane);
   scene.add(new THREE.GridHelper(40,20,0x555555,0x444444));
-  const rm=new THREE.MeshLambertMaterial({color:0x666666});
-  const r1=new THREE.Mesh(new THREE.PlaneGeometry(40,4),rm); r1.rotation.x=-Math.PI/2; r1.position.set(0,0.01,-10); scene.add(r1);
-  const r2=new THREE.Mesh(new THREE.PlaneGeometry(4,28),rm); r2.rotation.x=-Math.PI/2; r2.position.set(-12,0.01,0); scene.add(r2);
-  const cs=[0x4a90d9,0x8b7355,0x6b8e23,0xcd853f];
-  [[-10,-10,8,4,6],[ -14,4,5,2.5,5],[10,-8,6,3,5],[12,6,7,3.5,5],[-8,10,6,2,4]].forEach(b=>{
-    const m=new THREE.Mesh(new THREE.BoxGeometry(b[2],b[3],b[4]),new THREE.MeshLambertMaterial({color:cs[b[0]>0?1:0]}));
+  // 道路（带白线）
+  const rm=new THREE.MeshLambertMaterial({color:0x888888});
+  const r1=new THREE.Mesh(new THREE.PlaneGeometry(40,3.5),rm); r1.rotation.x=-Math.PI/2; r1.position.set(0,0.01,-10); scene.add(r1);
+  const r2=new THREE.Mesh(new THREE.PlaneGeometry(3.5,28),rm); r2.rotation.x=-Math.PI/2; r2.position.set(-12,0.01,0); scene.add(r2);
+  // 道路白线
+  const wlMat=new THREE.MeshBasicMaterial({color:0xffffff});
+  for(let i=-15;i<=15;i+=3){const wl=new THREE.Mesh(new THREE.PlaneGeometry(0.1,1.5),wlMat);wl.rotation.x=-Math.PI/2;wl.position.set(i,0.015,-10);scene.add(wl)}
+  for(let i=-10;i<=10;i+=3){const wl=new THREE.Mesh(new THREE.PlaneGeometry(1.5,0.1),wlMat);wl.rotation.x=-Math.PI/2;wl.position.set(-12,0.015,i);scene.add(wl)}
+  // 建筑（马路四角，避开十字路口）
+  const bData=[
+    [-17,-14,5,3.5,4,0x4a90d9],[-5,-14,5,3,4,0x6b8e23],
+    [-17,-5,5,3,4,0xcd853f],[-5,-5,5,3.5,4,0x8b7355],
+    [12,-5,5,2.5,4,0xa0522d],[-17,8,5,2.5,4,0x4682b4]
+  ];
+  bData.forEach(b=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(b[2],b[3],b[4]),new THREE.MeshLambertMaterial({color:b[5]}));
     m.position.set(b[0],b[3]/2,b[1]); m.castShadow=true; scene.add(m);
+    // 窗户效果（修复位置：wy是距底部高度，建筑底部在y=0）
+    const winMat=new THREE.MeshBasicMaterial({color:0xffffcc});
+    if(b[3]>2){for(let wy=0.8;wy<b[3]-0.3;wy+=1.2){for(let wx=-b[2]/2+0.8;wx<b[2]/2-0.5;wx+=1.2){
+      const win=new THREE.Mesh(new THREE.PlaneGeometry(0.3,0.5),winMat);
+      win.position.set(b[0]+wx, wy+0.25, b[1]+b[4]/2+0.01);scene.add(win)
+    }}}
   });
-  // 树
-  [[-15,-6],[-16,0],[-15,6],[8,-12],[9,-5],[11,4],[14,8],[-6,-12],[-4,8]].forEach(t=>{
-    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.2,0.8),new THREE.MeshLambertMaterial({color:0x8B4513}));
-    tr.position.set(t[0],0.4,t[1]); scene.add(tr);
-    const cr=new THREE.Mesh(new THREE.SphereGeometry(0.6),new THREE.MeshLambertMaterial({color:0x2d8a2d}));
-    cr.position.set(t[0],1.0,t[1]); scene.add(cr);
+  // 树（避开建筑和马路）
+  [[-15,-9],[-13,-1],[-15,5],[0,-9],[8,-1],[12,-1],[9,8],[-3,13],[0,12],[3,13],[12,9],[-14,11],[-6,12]].forEach(t=>{
+    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.3,1),new THREE.MeshLambertMaterial({color:0x8B4513}));
+    tr.position.set(t[0],0.5,t[1]); scene.add(tr);
+    const cr=new THREE.Mesh(new THREE.SphereGeometry(0.7,6),new THREE.MeshLambertMaterial({color:0x2d8a2d}));
+    cr.position.set(t[0],1.2,t[1]); cr.scale.y=0.8; scene.add(cr);
+  });
+  // 路灯（沿马路）
+  [[-17,-9],[-17,9],[17,-9],[17,9],[-11,-17],[-11,17]].forEach(t=>{
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,1.5),new THREE.MeshLambertMaterial({color:0x555555}));
+    pole.position.set(t[0],0.75,t[1]); scene.add(pole);
+    const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.12),new THREE.MeshLambertMaterial({color:0xffff88}));
+    lamp.position.set(t[0],1.6,t[1]); scene.add(lamp);
   });
   // 停车位
   const pts=[new THREE.Vector3(PARKING.x1,0.02,PARKING.z1),new THREE.Vector3(PARKING.x2,0.02,PARKING.z1),new THREE.Vector3(PARKING.x2,0.02,PARKING.z2),new THREE.Vector3(PARKING.x1,0.02,PARKING.z2)];
@@ -146,34 +177,77 @@ function anim(){requestAnimationFrame(anim);renderer.render(scene,camera)}
 
 function createBike(color){
   const g=new THREE.Group();
-  const wm=new THREE.MeshLambertMaterial({color:0x222222});
-  const wg=new THREE.TorusGeometry(0.4,0.12,8,12);
-  const w1=new THREE.Mesh(wg,wm);w1.position.set(-0.4,0.2,0);w1.rotation.y=Math.PI/2;
-  const w2=new THREE.Mesh(wg,wm);w2.position.set(0.4,0.2,0);w2.rotation.y=Math.PI/2;
-  g.add(w1);g.add(w2);
+  const wm=new THREE.MeshLambertMaterial({color:0x333333});
   const fm=new THREE.MeshLambertMaterial({color});
-  const bar=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.8),fm);bar.rotation.z=Math.PI/2;bar.position.set(0,0.4,0);g.add(bar);
-  const t1=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.5),fm);t1.position.set(-0.15,0.35,0);t1.rotation.z=0.6;g.add(t1);
-  const t2=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.5),fm);t2.position.set(0.15,0.35,0);t2.rotation.z=-0.6;g.add(t2);
-  const seat=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.04,0.08),new THREE.MeshLambertMaterial({color:0x333333}));seat.position.set(-0.15,0.55,0);g.add(seat);
-  const hd=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.25),new THREE.MeshLambertMaterial({color:0x333333}));hd.position.set(0.4,0.45,0);hd.rotation.z=0.3;g.add(hd);
+  const spMat=new THREE.MeshLambertMaterial({color:0x888888});
+  const R=0.5;  // 轮胎半径
+  const TR=0.07; // 轮胎管径
+  // 前后轮（直立！从俯视看是两条线）
+  const wg=new THREE.TorusGeometry(R,TR,8,16);
+  const w1=new THREE.Mesh(wg,wm);w1.position.set(-0.65,TR,0);w1.rotation.z=Math.PI/2;g.add(w1);
+  const w2=new THREE.Mesh(wg,wm);w2.position.set(0.65,TR,0);w2.rotation.z=Math.PI/2;g.add(w2);
+  // 辐条（从轮心到轮圈）
+  for(let s=-1;s<=1;s+=2){
+    for(let a=0;a<6;a++){
+      const ang=a*Math.PI/3;
+      const sp=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,R-0.08),spMat);
+      sp.position.set(s*0.65,TR+R*0.5,0);
+      sp.rotation.x=-Math.PI/2;sp.rotation.z=ang;
+      g.add(sp);
+    }
+  }
+  // 车架节点坐标 (x,y) - 底部在y=TR
+  const nodes={
+    rear:[-0.65,TR],     // 后轮轴
+    crank:[-0.1,TR],     // 中轴
+    seat:[-0.05,TR+0.55], // 坐垫底部
+    head:[0.6,TR+0.5],   // 车把底部
+    front:[0.65,TR],     // 前轮轴
+  };
+  // 连接管
+  const conns=[
+    [nodes.rear,nodes.crank],[nodes.crank,nodes.seat],[nodes.seat,nodes.rear],
+    [nodes.front,nodes.head],[nodes.crank,nodes.front],[nodes.seat,nodes.head],
+  ];
+  conns.forEach(c=>{
+    const dx=c[1][0]-c[0][0],dy=c[1][1]-c[0][1];
+    const len=Math.sqrt(dx*dx+dy*dy);
+    const tube=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,len,4),fm);
+    tube.position.set((c[0][0]+c[1][0])/2,(c[0][1]+c[1][1])/2,0);
+    if(len>0.01)tube.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(dx,dy,0).normalize());
+    g.add(tube);
+  });
+  // 坐垫
+  const st=new THREE.Mesh(new THREE.BoxGeometry(0.25,0.04,0.1),new THREE.MeshLambertMaterial({color:0x222222}));
+  st.position.set(nodes.seat[0],nodes.seat[1]+0.02,0);g.add(st);
+  // 车把（横管）
+  const hb=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.35),new THREE.MeshLambertMaterial({color:0x555555}));
+  hb.position.set(nodes.head[0],nodes.head[1]+0.05,0);hb.rotation.x=Math.PI/2;g.add(hb);
+  g.scale.set(1.0,1.0,1.0);
+  g.position.y=1.1;
   return g;
 }
 
+function bikeColor(idx){
+  return BIKE_COLORS[idx%BIKE_COLORS.length];
+}
+
 function placeBike(idx,x,z){
-  const c=isInPark(x,z)?0x22c55e:0xef4444;
+  const inPark=isInPark(x,z);
+  const c=bikeColor(idx);
   const b=createBike(c);b.position.set(x,0,z);scene.add(b);
-  placed[idx]={mesh:b,idx,x,z,com:c===0x22c55e};
-  st();toast(c===0x22c55e?'✅ 合规':'❌ 违规',c===0x22c55e?'ok':'err');
+  placed[idx]={mesh:b,idx,x,z,com:inPark};
+  st();toast(inPark?'✅ 合规':'❌ 违规',inPark?'ok':'err');
 }
 
 function moveBike(idx,x,z){
   if(!placed[idx])return;
-  const c=isInPark(x,z)?0x22c55e:0xef4444;
+  const inPark=isInPark(x,z);
+  const c=bikeColor(idx);
   scene.remove(placed[idx].mesh);
   const b=createBike(c);b.position.set(x,0,z);scene.add(b);
-  placed[idx]={mesh:b,idx,x,z,com:c===0x22c55e};
-  st();toast(c===0x22c55e?'✅ 合规':'❌ 违规',c===0x22c55e?'ok':'err');
+  placed[idx]={mesh:b,idx,x,z,com:inPark};
+  st();toast(inPark?'✅ 合规':'❌ 违规',inPark?'ok':'err');
 }
 
 function setup3DDrag(){
@@ -201,7 +275,7 @@ function setup3DDrag(){
   cv.addEventListener('mouseup',()=>{
     if(!active||!sel||sIdx<0){active=false;return}
     const x=sel.position.x,z=sel.position.z,c=isInPark(x,z)?0x22c55e:0xef4444;
-    if(placed[sIdx]){placed[sIdx].x=x;placed[sIdx].z=z;placed[sIdx].com=c===0x22c55e;scene.remove(sel);const b=createBike(c);b.position.set(x,0,z);scene.add(b);placed[sIdx].mesh=b;st()}
+    if(placed[sIdx]){const inPark=isInPark(x,z);placed[sIdx].x=x;placed[sIdx].z=z;placed[sIdx].com=inPark;scene.remove(sel);const b=createBike(bikeColor(sIdx));b.position.set(x,0,z);scene.add(b);placed[sIdx].mesh=b;st()}
     sel=null;sIdx=-1;active=false;
   });
 }
@@ -221,7 +295,9 @@ function renderCards(){
     const cd=document.createElement('div');cd.className='card';cd.dataset.idx=i;
     let badge=img.detected?img.isBike?'<span class="badge badge-ok">🚲</span>':'<span class="badge badge-no">❌</span>':'<span class="badge badge-wait">⏳</span>';
     cd.innerHTML=badge+'<img src="'+img.url+'" style="width:100%;height:80px;object-fit:cover;border-radius:4px"><div class=label>'+img.label+'</div>';
-    cd.onmousedown=e=>{if(!img.isBike){toast('❌非自行车','info');return}
+    cd.onmousedown=e=>{
+      if(!camera){toast('⏳3D场景未就绪','info');return}
+      if(img.detected&&!img.isBike){toast('❌非自行车','info');return}
       if(placed[i]&&placed[i].mesh){toast('🔄已放置，在场景中拖动','info');return}
       drag.active=true;drag.source='card';drag.bikeIdx=i;
       const cl=document.createElement('img');cl.src=img.url;
@@ -229,18 +305,27 @@ function renderCards(){
       document.body.appendChild(cl);drag.clone=cl;drag.offX=50;drag.offY=37;
       cl.style.left=(e.clientX-50)+'px';cl.style.top=(e.clientY-37)+'px';
       const mv=e2=>{if(drag.clone){drag.clone.style.left=(e2.clientX-50)+'px';drag.clone.style.top=(e2.clientY-37)+'px'}};
-      const up=e2=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);
+      const up=e2=>{
+        document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);
         if(drag.clone){drag.clone.remove();drag.clone=null}
-        if(!drag.active)return;
-        const cv=document.querySelector('#scene3d canvas');if(!cv){drag.active=false;return}
-        const r=cv.getBoundingClientRect();
-        if(e2.clientX<r.left||e2.clientX>r.right||e2.clientY<r.top||e2.clientY<r.bottom){drag.active=false;return}
-        const m=new THREE.Vector2(((e2.clientX-r.left)/r.width)*2-1,-((e2.clientY-r.top)/r.height)*2+1);
-        const ray=new THREE.Raycaster();ray.setFromCamera(m,camera);
-        const ht=ray.intersectObject(ground);
-        if(ht.length>0){const p=ht[0].point;const x=Math.max(-18,Math.min(18,p.x)),z=Math.max(-12,Math.min(12,p.z));
-          if(placed[drag.bikeIdx]&&placed[drag.bikeIdx].mesh)moveBike(drag.bikeIdx,x,z);else placeBike(drag.bikeIdx,x,z)
-        }
+        if(!drag.active||!camera||drag.bikeIdx<0){drag.active=false;return}
+        const cv=document.querySelector('#scene3d canvas');
+        if(!cv){drag.active=false;return}
+        // 计算3D位置
+        let x=0,z=0;
+        try{
+          const r=cv.getBoundingClientRect();
+          if(e2.clientX>=r.left&&e2.clientX<=r.right&&e2.clientY>=r.top&&e2.clientY<=r.bottom){
+            const m=new THREE.Vector2(((e2.clientX-r.left)/r.width)*2-1,-((e2.clientY-r.top)/r.height)*2+1);
+            const ray=new THREE.Raycaster();ray.setFromCamera(m,camera);
+            const plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+            const pt=new THREE.Vector3();
+            if(ray.ray.intersectPlane(plane,pt)){x=Math.max(-18,Math.min(18,pt.x));z=Math.max(-12,Math.min(12,pt.z))}
+          }
+        }catch(e){console.error('drop err',e)}
+        // 确保自行车出现
+        if(placed[drag.bikeIdx]&&placed[drag.bikeIdx].mesh)moveBike(drag.bikeIdx,x,z);
+        else placeBike(drag.bikeIdx,x,z);
         drag.active=false;drag.source=null;drag.bikeIdx=-1;
       };
       document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
@@ -273,43 +358,28 @@ function toggleGesture(){gestureEnabled?stopGesture():initGesture()}
 function initGesture(){
   const btn=document.getElementById('btnGesture');btn.textContent='✋加载中';btn.disabled=true;
   const video=document.getElementById('webcam');document.getElementById('camBox').style.display='block';
-  const hands=new Hands({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/hands/'+f});
-  hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.5,minTrackingConfidence:.5});
+  const hands=new Hands({locateFile:f=>'/static/'+f});
+  hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.3,minTrackingConfidence:.3});
   hands.onResults(r=>{
     if(r.multiHandLandmarks&&r.multiHandLandmarks.length>0){
       const lm=r.multiHandLandmarks[0],t=lm[4],i=lm[8];
       gesture.x=(1-i.x)*window.innerWidth;gesture.y=i.y*window.innerHeight;
-      gesture.prev=gesture.isPinching;gesture.isPinching=Math.hypot((t.x-i.x)*3,(t.y-i.y)*3,(t.z-i.z)*3)<0.045;
+      gesture.prev=gesture.isPinching;gesture.isPinching=Math.hypot((t.x-i.x)*3,(t.y-i.y)*3,(t.z-i.z)*3)<0.08;
       const c=document.getElementById('cursor');c.style.display='block';c.style.left=gesture.x+'px';c.style.top=gesture.y+'px';
       c.className=gesture.isPinching?'pinch':'';
-      // 手势拖拽
+      // 手势拖拽：派发鼠标事件到DOM+canvas（同时支持卡片和3D自行车）
+      const me=(t)=>new MouseEvent(t,{clientX:gesture.x,clientY:gesture.y,bubbles:true});
+      const cv=document.querySelector('#scene3d canvas');
       if(gesture.isPinching&&!gesture.prev){
-        const cv=document.querySelector('#scene3d canvas');if(!cv)return;
-        const r=cv.getBoundingClientRect();
-        if(gesture.x<r.left||gesture.x>r.right||gesture.y<r.top||gesture.y<r.bottom)return;
-        const m=new THREE.Vector2(((gesture.x-r.left)/r.width)*2-1,-((gesture.y-r.top)/r.height)*2+1);
-        const ray=new THREE.Raycaster();ray.setFromCamera(m,camera);
-        const bikes=Object.values(placed).filter(p=>p.mesh).map(p=>p.mesh);
-        const hits=ray.intersectObjects(bikes,true);
-        if(hits.length>0){
-          let o=hits[0].object;while(o.parent&&!Object.values(placed).find(p=>p.mesh===o))o=o.parent;
-          const en=Object.values(placed).find(p=>p.mesh===o);
-          if(en){drag.active=true;drag.el3d=en.mesh;drag.bikeIdx=en.idx;drag.offX=0;drag.offY=0}
-        }
+        const el=document.elementFromPoint(gesture.x,gesture.y);
+        if(el)el.dispatchEvent(me('mousedown'));
+        if(cv&&cv!==el)cv.dispatchEvent(me('mousedown'));
       }else if(gesture.isPinching&&gesture.prev){
-        if(drag.active&&drag.el3d){
-          const cv=document.querySelector('#scene3d canvas');const r=cv.getBoundingClientRect();
-          const m=new THREE.Vector2(((gesture.x-r.left)/r.width)*2-1,-((gesture.y-r.top)/r.height)*2+1);
-          const ray=new THREE.Raycaster();ray.setFromCamera(m,camera);
-          const pt=new THREE.Vector3();ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),pt);
-          drag.el3d.position.set(Math.max(-18,Math.min(18,pt.x)),0,Math.max(-12,Math.min(12,pt.z)));
-        }
+        document.dispatchEvent(me('mousemove'));
+        if(cv)cv.dispatchEvent(me('mousemove'));
       }else if(!gesture.isPinching&&gesture.prev){
-        if(drag.active&&drag.el3d&&drag.bikeIdx>=0){
-          const x=drag.el3d.position.x,z=drag.el3d.position.z,c=isInPark(x,z)?0x22c55e:0xef4444;
-          if(placed[drag.bikeIdx]){placed[drag.bikeIdx].x=x;placed[drag.bikeIdx].z=z;placed[drag.bikeIdx].com=c===0x22c55e;scene.remove(drag.el3d);const b=createBike(c);b.position.set(x,0,z);scene.add(b);placed[drag.bikeIdx].mesh=b;st()}
-        }
-        drag.active=false;drag.el3d=null;drag.bikeIdx=-1;
+        document.dispatchEvent(me('mouseup'));
+        if(cv)cv.dispatchEvent(me('mouseup'));
       }
     }else{gesture.prev=gesture.isPinching;gesture.isPinching=false;document.getElementById('cursor').style.display='none'}
   });

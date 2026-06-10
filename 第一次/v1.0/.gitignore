@@ -24,6 +24,3 @@ __pycache__/
 # 系统
 Thumbs.db
 .DS_Store
-
-# 敏感信息
-douyin_cookies.txt
