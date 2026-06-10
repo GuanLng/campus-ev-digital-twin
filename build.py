@@ -1,4 +1,12 @@
-<!DOCTYPE html>
+# 生成完整 index.html
+import os
+os.makedirs('templates',exist_ok=True)
+
+# 用列表分块写入，避免大字符串问题
+parts = []
+
+# === HTML 结构 ===
+parts.append('''<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -78,7 +86,10 @@ body{font-family:'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;h
 <div id=cursor><div class=dot></div><div class=ring></div></div>
 <div id=toast></div>
 <script>
+''')
 
+# === 完整的 JS 代码 ===
+parts.append('''
 let scene, camera, renderer, ground;
 const PARKING={x1:-5,z1:-4,x2:5,z2:4};
 let IMGS=[], placed={};
@@ -194,7 +205,10 @@ function setup3DDrag(){
     sel=null;sIdx=-1;active=false;
   });
 }
+''')
 
+# === YOLO检测 + 图片管理 ===
+parts.append('''
 async function detectAll(){
   const btn=document.getElementById('btnDetect');btn.disabled=true;btn.textContent='⏳检测...';
   for(let i=0;i<IMGS.length;i++){try{const r=await fetch('/api/detect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:IMGS[i].file})});const d=await r.json();IMGS[i].detected=true;IMGS[i].isBike=d.has_bicycle}catch(e){}renderCards()}
@@ -249,7 +263,10 @@ function st(){
 function toast(m,t){const o=document.getElementById('toast');o.textContent=m;o.className='toast show '+t;clearTimeout(o._timer);o._timer=setTimeout(()=>o.classList.remove('show'),2000)}
 
 function resetAll(){Object.values(placed).filter(p=>p.mesh).forEach(p=>scene.remove(p.mesh));placed={};st();toast('🔄已重置','info')}
+''')
 
+# === 手势控制 ===
+parts.append('''
 let gestureEnabled=false,gestureReady=false;
 const gesture={isPinching:false,x:0,y:0,prev:false};
 function toggleGesture(){gestureEnabled?stopGesture():initGesture()}
@@ -299,9 +316,22 @@ function initGesture(){
   new Camera(video,{onFrame:async()=>{await hands.send({image:video})},width:320,height:240}).start().then(()=>{gestureReady=true;gestureEnabled=true;btn.textContent='✋手势:开';btn.className='btn btn-purple active';btn.disabled=false}).catch(()=>{btn.textContent='✋失败';btn.disabled=false})
 }
 function stopGesture(){gestureEnabled=false;gestureReady=false;document.getElementById('camBox').style.display='none';document.getElementById('cursor').style.display='none';const btn=document.getElementById('btnGesture');btn.textContent='✋手势:关';btn.className='btn btn-purple'}
+''')
 
+# === 初始化 ===
+parts.append('''
 loadImgs();
 let _wait=0;
 function _try(){if(typeof THREE!=='undefined'){initScene();setup3DDrag()}else if(_wait++<50){document.getElementById('sceneHint').innerHTML='<div class=icon>⏳</div><p>加载Three.js中...</p>';setTimeout(_try,200)}else{document.getElementById('sceneHint').innerHTML='<div class=icon>❌</div><p>加载失败</p>'}}
 setTimeout(_try,100);
 </script></body></html>
+''')
+
+with open('templates/index.html','w',encoding='utf-8') as f:
+    for p in parts:
+        f.write(p)
+
+size = os.path.getsize('templates/index.html')
+print(f'生成完成: {size} bytes')
+tpl = open("templates/index.html").read()
+print(f'Three.js本地: {"/static/three.min.js" in tpl}')
