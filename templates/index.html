@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>校园电动车数字孪生监管系统</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/static/three.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none}
 body{font-family:'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;height:100vh;overflow:hidden}
@@ -84,7 +84,7 @@ body{font-family:'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;h
 <div class="main">
 <div class="sidebar" id="imageList">
 <h3>📷 图片资源</h3>
-<div id="imageCards">加载中...</div>
+<div id="imageCards"><p style="color:#94a3b8;font-size:13px">加载中...</p></div>
 </div>
 
 <div class="scene-wrap" id="sceneWrap">
@@ -103,11 +103,9 @@ let imageData = [];
 const drag = { active: false, source: null, clone: null, offsetX: 50, offsetY: 37 };
 
 // ========== Three.js 场景 ==========
-let scene, camera, renderer, ground, parkingZone, bikeGroup;
-const BIKES = []; // 已放置的3D自行车 { mesh, idx, compliant }
+let scene, camera, renderer, ground;
+// BIKES 已在下方声明iant }
 
-// 停车位世界坐标（3D场景中的矩形）
-const PARKING = { x: -5, z: -3, w: 10, h: 6 };
 
 function initThree() {
     const container = document.getElementById('threeCanvas');
@@ -178,7 +176,8 @@ function initThree() {
         renderer.setSize(w2, h2);
     });
 
-    animate();
+    document.getElementById("sceneHint").classList.add("hidden");
+  animate();
 }
 
 // 画停车位（3D黄色线框）
@@ -312,14 +311,6 @@ function placeBikeInScene(imgIdx, x3d, z3d) {
 }
 
 // 动画循环
-function animate() {
-    requestAnimationFrame(animate);
-    // 自行车微微浮动
-    BIKES.forEach((b, i) => {
-        b.mesh.position.y = Math.sin(Date.now() / 1000 + i) * 0.03;
-    });
-    renderer.render(scene, camera);
-}
 
 // ========== 统一拖拽接口（鼠标+手势共用） ==========
 function dragStart(type, idx, cx, cy, opts) {
@@ -469,8 +460,7 @@ function showToast(msg, type) {
 }
 
 // ========== 手势识别 (MediaPipe) ==========
-let gestureEnabled = false, gestureReady = false;
-let gesture = { isPinching: false, x: 0, y: 0, prevPinching: false };
+
 
 function toggleGesture() {
     const btn = document.getElementById('btnGesture');
@@ -569,7 +559,6 @@ window.onload = function() {
 };
 
 // ============ Three.js 3D场景 ============
-let scene, camera, renderer, ground;
 const PARKING={x1:-5,z1:-4,x2:5,z2:4};
 
 function initScene(){
@@ -650,6 +639,7 @@ function initScene(){
     renderer.setSize(w,h);
   });
 
+  document.getElementById("sceneHint").classList.add("hidden");
   animate();
 }
 
@@ -961,7 +951,13 @@ function handleGestureDrag(){
 
 // ============ 初始化 ============
 loadImgs();
-setTimeout(()=>{initScene();setup3DDrag()},100);
+// 等待 Three.js 加载完成
+function waitThreeJs(){
+  if(typeof THREE!=='undefined'){initScene();setup3DDrag();return}
+  document.getElementById('sceneHint').innerHTML='<div class="icon">⏳</div><p>加载Three.js中...</p>';
+  setTimeout(waitThreeJs,200);
+}
+setTimeout(waitThreeJs,300);
 </script>
 </body>
 </html></script>
