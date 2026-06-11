@@ -274,7 +274,7 @@ const PARKING = { left: 0.15, top: 0.15, width: 0.7, height: 0.7 };
 // ========== 手势状态 ==========
 let gestureEnabled = false;
 let gestureReady = false;
-let gesture = { isPinching: false, x: 0, y: 0, prevPinching: false };
+let gesture = { isPinching: false, x: 0, y: 0, prevPinching: false, isDragging: false };
 let hands = null;
 let camera = null;
 
@@ -329,9 +329,10 @@ function dragStart(itemType, idx, cx, cy, extra) {
     drag.sourceIdx = idx;
 
     if (itemType === 'card') {
-        if (!imageData[idx] || !imageData[idx].isBicycle) {
+        // 如果已检测且不是自行车 → 拒绝
+        if (imageData[idx] && imageData[idx].detected && imageData[idx].isBicycle === false) {
             drag.active = false;
-            showToast('⛔ 只有自行车可以拖入场景', 'info');
+            showToast('⛔ 非自行车不能拖入场景', 'info');
             return;
         }
         // 创建克隆
@@ -605,6 +606,11 @@ function initGesture() {
         minTrackingConfidence: 0.5
     });
 
+    // 手势防抖：捏合需要持续 N 帧才触发/松开
+    const PINCH_THRESHOLD = 0.065;      // 捏合判定阈值（放宽）
+    const PINCH_RELEASE = 0.085;        // 松手判定阈值（防抖：捏合后要张更大才算松开）
+    let pinchLockFrames = 0;            // 连续捏合帧数计数器
+
     hands.onResults((results) => {
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
             const lm = results.multiHandLandmarks[0];
@@ -616,24 +622,68 @@ function initGesture() {
             gesture.x = (1 - index.x) * window.innerWidth;
             gesture.y = index.y * window.innerHeight;
 
-            // 捏合检测：拇指和食指指尖距离
+            // 捏合检测：拇指和食指指尖距离（带 z 轴）
             const dx = thumb.x - index.x;
             const dy = thumb.y - index.y;
             const dz = (thumb.z - index.z) || 0;
             const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            gesture.prevPinching = gesture.isPinching;
-            gesture.isPinching = dist < 0.045;
+
+            // ---- 防抖捏合判定 ----
+            if (gesture.isDragging) {
+                // 正在拖拽中：用宽松阈值，防止抖动断连
+                gesture.prevPinching = true;
+                const stillPinching = dist < PINCH_RELEASE;
+                if (!stillPinching) {
+                    pinchLockFrames++;
+                    // 连续多帧都判定为松开，才真的结束
+                    if (pinchLockFrames > 5) {
+                        gesture.isPinching = false;
+                        gesture.isDragging = false;
+                        pinchLockFrames = 0;
+                        if (drag.active) dragEnd(gesture.x, gesture.y);
+                    }
+                } else {
+                    pinchLockFrames = 0;
+                    gesture.isPinching = true;
+                    if (drag.active) dragMove(gesture.x, gesture.y);
+                }
+            } else {
+                // 未拖拽：正常捏合检测
+                gesture.prevPinching = gesture.isPinching;
+                const justPinched = dist < PINCH_THRESHOLD;
+                if (justPinched) {
+                    pinchLockFrames++;
+                    if (pinchLockFrames > 3) {
+                        // 连续多帧捏合才触发
+                        gesture.isPinching = true;
+                        gesture.isDragging = true;
+                        pinchLockFrames = 0;
+                        handleGestureDragStart();
+                    }
+                } else {
+                    pinchLockFrames = 0;
+                    gesture.isPinching = false;
+                }
+            }
 
             updateGestureCursor();
-            handleGestureDrag();
         } else {
-            gesture.prevPinching = gesture.isPinching;
-            gesture.isPinching = false;
-            document.getElementById('gestureCursor').style.display = 'none';
-            if (gestureEnabled && drag.active) {
-                // 手离开画面，结束拖拽
-                dragEnd(gesture.x, gesture.y);
+            // 手离开画面
+            if (gesture.isDragging) {
+                // 正在拖拽中：不立刻结束，短暂等待手回来
+                pinchLockFrames++;
+                if (pinchLockFrames > 15) {  // ~0.5秒手还没回来才放弃
+                    gesture.isPinching = false;
+                    gesture.isDragging = false;
+                    pinchLockFrames = 0;
+                    if (drag.active) dragEnd(gesture.x, gesture.y);
+                }
+            } else {
+                gesture.prevPinching = gesture.isPinching;
+                gesture.isPinching = false;
+                pinchLockFrames = 0;
             }
+            document.getElementById('gestureCursor').style.display = 'none';
         }
     });
 
@@ -670,6 +720,8 @@ function initGesture() {
 function stopGesture() {
     gestureEnabled = false;
     gestureReady = false;
+    gesture.isDragging = false;
+    gesture.isPinching = false;
     if (camera) { try { camera.stop(); } catch(e) {} camera = null; }
     if (hands) { hands.close(); hands = null; }
     document.getElementById('webcam').style.display = 'none';
@@ -690,45 +742,33 @@ function updateGestureCursor() {
     cursor.className = 'gesture-cursor' + (gesture.isPinching ? ' pinching' : '');
 }
 
-function handleGestureDrag() {
-    if (!gestureEnabled) return;
+// 手势捏合触发时调用（已防抖确认）
+function handleGestureDragStart() {
+    if (!gestureEnabled || drag.active) return;
 
-    const pinching = gesture.isPinching;
-    const prev = gesture.prevPinching;
+    const el = document.elementFromPoint(gesture.x, gesture.y);
+    if (!el) return;
 
-    if (pinching && !prev) {
-        // 捏合开始 → 查找手势下方的元素
-        const el = document.elementFromPoint(gesture.x, gesture.y);
-        if (!el) return;
-
-        // 检查是否是已放置图片
-        const placed = el.closest('.placed-image');
-        if (placed) {
-            const idx = parseInt(placed.dataset.idx);
-            dragStart('placed', idx, gesture.x, gesture.y, { el: placed });
+    // 检查是否是已放置图片
+    const placed = el.closest('.placed-image');
+    if (placed) {
+        const idx = parseInt(placed.dataset.idx);
+        dragStart('placed', idx, gesture.x, gesture.y, { el: placed });
+        return;
+    }
+    // 检查是否是左侧卡片
+    const card = el.closest('.image-card');
+    if (card) {
+        const idx = parseInt(card.dataset.index);
+        // 对于手势：如果还没检测，允许拖（先放再说）
+        if (!imageData[idx] || imageData[idx].isBicycle === false) {
+            showToast('⛔ 非自行车不能拖入场景', 'info');
+            gesture.isDragging = false;
             return;
         }
-        // 检查是否是左侧卡片
-        const card = el.closest('.image-card');
-        if (card) {
-            const idx = parseInt(card.dataset.index);
-            dragStart('card', idx, gesture.x, gesture.y, { cardEl: card });
-            return;
-        }
-    } else if (pinching && prev) {
-        // 持续捏合 → 移动
-        if (drag.active) dragMove(gesture.x, gesture.y);
-    } else if (!pinching && prev) {
-        // 松开 → 结束拖拽
-        if (drag.active) dragEnd(gesture.x, gesture.y);
+        dragStart('card', idx, gesture.x, gesture.y, { cardEl: card });
     }
 }
-
-// 允许手势拖拽已放置图片的另一种方式：直接在dragMove中处理
-// 但手势通过handleGestureDrag已经处理了，所以不需要额外代码
-
-// 手势拖拽已放置图片时，手势x,y不在图片上也能拖动
-// 已通过dragStart('placed',...)正确处理
 
 // ========== 鼠标拖拽场景中的图片也统一走核心接口 ==========
 // 鼠标事件已在 bindMouseDrag 和 placeImage 中绑定
