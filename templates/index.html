@@ -70,6 +70,7 @@ body{font-family:'Microsoft YaHei',sans-serif;background:#0f172a;color:#e2e8f0;h
 <span class="s-green">🟢 合规 <span class=num id=ctOk>0</span></span>
 <span class="s-red">🔴 违规 <span class=num id=ctBad>0</span></span>
 <span class="s-blue">📦 已放 <span class=num id=ctPlaced>0</span></span>
+<span id=gestureStatus style="font-size:12px;color:#94a3b8;margin-left:8px"></span>
 </div>
 </div>
 <div class=main>
@@ -347,7 +348,10 @@ function initGesture(){
     if(r.multiHandLandmarks&&r.multiHandLandmarks.length>0){
       const lm=r.multiHandLandmarks[0],t=lm[4],i=lm[8];
       gesture.x=(1-i.x)*window.innerWidth;gesture.y=i.y*window.innerHeight;
-      gesture.prev=gesture.isPinching;gesture.isPinching=Math.hypot((t.x-i.x)*3,(t.y-i.y)*3,(t.z-i.z)*3)<0.08;
+      // 用像素距离判断捏合（拇指和食指间距<50像素=捏合）
+      const pxDist=Math.hypot((t.x-i.x)*window.innerWidth,(t.y-i.y)*window.innerHeight);
+      gesture.prev=gesture.isPinching;gesture.isPinching=pxDist<50;
+      document.getElementById('gestureStatus').textContent='🖐️手部已识别'+(gesture.isPinching?' 🤏捏合中':'');
       const c=document.getElementById('cursor');c.style.display='block';c.style.left=gesture.x+'px';c.style.top=gesture.y+'px';
       c.className=gesture.isPinching?'pinch':'';
       // 手势拖拽：派发鼠标事件到DOM+canvas（同时支持卡片和3D自行车）
@@ -364,7 +368,7 @@ function initGesture(){
         document.dispatchEvent(me('mouseup'));
         if(cv)cv.dispatchEvent(me('mouseup'));
       }
-    }else{gesture.prev=gesture.isPinching;gesture.isPinching=false;document.getElementById('cursor').style.display='none'}
+    }else{gesture.prev=gesture.isPinching;gesture.isPinching=false;document.getElementById('cursor').style.display='none';document.getElementById('gestureStatus').textContent='⏳未检测到手'}
   });
   new Camera(video,{onFrame:async()=>{await hands.send({image:video})},width:320,height:240}).start().then(()=>{gestureReady=true;gestureEnabled=true;btn.textContent='✋手势:开';btn.className='btn btn-purple active';btn.disabled=false}).catch(()=>{btn.textContent='✋失败';btn.disabled=false})
 }
