@@ -1,0 +1,24 @@
+# ============================================
+# 校园电动车数字孪生监管系统 - 依赖清单
+# ============================================
+
+# --- Web 框架 ---
+flask>=3.0
+
+# --- 计算机视觉 ---
+opencv-python>=4.9
+numpy>=1.24
+
+# --- YOLO 目标检测 ---
+ultralytics>=8.3
+
+# --- PyTorch（ultralytics 所需，建议安装 GPU 版） ---
+# CPU 版：
+torch>=2.0
+# GPU 版（CUDA 12.1）：pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# --- 工具 ---
+requests>=2.31
+
+# --- [可选] ModelScope 国内镜像下载 ---
+# modelscope>=1.9
