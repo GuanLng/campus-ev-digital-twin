@@ -14,6 +14,10 @@ __pycache__/
 .reasonix/
 .cache/
 .env
+.superpowers/
+.browser-profile/
+.yolo_config/
+*.log
 
 # VS Code
 .vscode/
@@ -27,3 +31,6 @@ Thumbs.db
 
 # 敏感信息
 douyin_cookies.txt
+.pip-cache/http-v2/0/5/c/7/0/05c707b3ea508d31870e5309bcb8e9c7a56e1fc2dfebc89692dc6458
+.pip-cache/
+.python_packages/

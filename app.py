@@ -3,8 +3,18 @@
 运行：D:\Anaconda\python.exe app.py
 然后在浏览器打开 http://localhost:5000
 """
-import os, sys
+import os
+import sys
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+LOCAL_SITE_PACKAGES = BASE_DIR / ".python_packages"
+if LOCAL_SITE_PACKAGES.exists():
+    sys.path.insert(0, str(LOCAL_SITE_PACKAGES))
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ.setdefault("YOLO_CONFIG_DIR", str(BASE_DIR / ".yolo_config"))
+Path(os.environ["YOLO_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
 
 from flask import Flask, jsonify, request, send_file, render_template
 from ultralytics import YOLO
@@ -14,9 +24,23 @@ import numpy as np
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
+def resolve_model_path():
+    candidates = [
+        BASE_DIR / "yolo11n.pt",
+        BASE_DIR / "第一次" / "v1.0" / "modelscope_cache" / "ultralytics" / "yolo11n.pt",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    for candidate in BASE_DIR.rglob("yolo11n.pt"):
+        return str(candidate)
+
+    return str(BASE_DIR / "yolo11n.pt")
+
 # 加载YOLO模型
 print("正在加载YOLO模型...")
-model = YOLO("yolo11n.pt")
+model = YOLO(resolve_model_path())
 print("✅ YOLO模型加载完成")
 
 # 预置图片列表
